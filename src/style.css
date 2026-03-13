@@ -1,0 +1,298 @@
+:root {
+  --bg-dark: #0a0c0f;
+  --accent-green: #00ff88;
+  --accent-amber: #ffaa00;
+  --accent-red: #ff3333;
+  --glass-bg: rgba(10, 12, 15, 0.7);
+  --glass-border: 1px solid rgba(0, 255, 136, 0.3);
+  --font-data: 'JetBrains Mono', monospace;
+  --font-header: 'Orbitron', sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  background-color: var(--bg-dark);
+  color: var(--accent-green);
+  font-family: var(--font-data);
+}
+
+#cesiumContainer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 1;
+}
+
+/* Base UI Overlay */
+#uiLayer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+/* Glassmorphism Panels */
+.hud-panel {
+  background: var(--glass-bg);
+  backdrop-filter: blur(10px);
+  border: var(--glass-border);
+  box-shadow: 0 0 20px rgba(0, 255, 136, 0.1);
+  pointer-events: auto;
+  position: relative;
+  overflow: hidden;
+}
+
+/* Scanline Effect Overlay for Panels */
+.hud-panel::before {
+  content: "";
+  position: absolute;
+  top: 0; left: 0; width: 100%; height: 100%;
+  background: linear-gradient(
+    rgba(18, 16, 16, 0) 50%, 
+    rgba(0, 0, 0, 0.25) 50%
+  );
+  background-size: 100% 4px;
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0.5;
+}
+
+/* Content wrapper ensuring it sits above scanlines */
+.hud-panel > * {
+  position: relative;
+  z-index: 1;
+}
+
+/* Headers */
+h1, h2, h3 {
+  font-family: var(--font-header);
+  letter-spacing: 2px;
+  text-transform: uppercase;
+}
+
+.header-panel {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 20px;
+  border-top: none;
+  border-left: none;
+  border-right: none;
+  border-bottom: var(--glass-border);
+}
+
+.logo {
+  font-size: 1.5rem;
+  font-weight: 900;
+  color: #fff;
+}
+
+.logo span {
+  color: var(--accent-green);
+}
+
+.system-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.9rem;
+}
+
+.pulse {
+  width: 8px;
+  height: 8px;
+  background-color: var(--accent-green);
+  border-radius: 50%;
+  box-shadow: 0 0 10px var(--accent-green);
+  animation: pulse-anim 2s infinite;
+}
+
+@keyframes pulse-anim {
+  0% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.5); opacity: 0.5; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+.clock-display {
+  font-size: 1.1rem;
+  font-weight: bold;
+}
+
+/* Sidebar */
+.sidebar-panel {
+  width: 320px;
+  margin: 20px;
+  padding: 20px;
+  border-radius: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  max-height: calc(100vh - 200px);
+  overflow-y: auto;
+}
+
+.panel-section h2 {
+  font-size: 0.8rem;
+  color: #888;
+  margin-bottom: 10px;
+  border-bottom: 1px solid rgba(255,255,255,0.1);
+  padding-bottom: 4px;
+}
+
+.button-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.filter-btn {
+  background: transparent;
+  color: var(--accent-green);
+  border: 1px solid rgba(0, 255, 136, 0.4);
+  padding: 8px 12px;
+  font-family: var(--font-data);
+  font-size: 0.8rem;
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.2s;
+}
+
+.filter-btn:hover {
+  background: rgba(0, 255, 136, 0.1);
+}
+
+.filter-btn.active {
+  background: rgba(0, 255, 136, 0.2);
+  border-color: var(--accent-green);
+  box-shadow: inset 0 0 10px rgba(0,255,136,0.2);
+  font-weight: bold;
+}
+
+.filter-btn.active::before {
+  content: "► ";
+}
+
+.data-stats {
+  list-style: none;
+  font-size: 0.9rem;
+}
+
+.data-stats li {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.data-value {
+  color: #fff;
+  font-weight: bold;
+}
+
+.coord-display {
+  font-size: 0.85rem;
+  line-height: 1.5;
+}
+
+/* Command Palette */
+.command-panel {
+  margin: 20px;
+  margin-top: auto;
+  border-radius: 4px;
+  padding: 15px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.input-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.prompt-icon {
+  color: var(--accent-amber);
+  font-weight: bold;
+}
+
+#commandInput {
+  flex-grow: 1;
+  background: transparent;
+  border: none;
+  color: #fff;
+  font-family: var(--font-data);
+  font-size: 1rem;
+  outline: none;
+}
+
+#commandInput::placeholder {
+  color: rgba(255, 255, 255, 0.3);
+}
+
+.ai-response {
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.6);
+  min-height: 1.2em;
+}
+
+/* Timeline Panel */
+.timeline-panel {
+  position: absolute;
+  bottom: 20px;
+  right: 20px;
+  width: 400px;
+  padding: 15px;
+  border-radius: 4px;
+  z-index: 10;
+}
+
+.scrubber {
+  width: 100%;
+  appearance: none;
+  background: rgba(255,255,255,0.1);
+  height: 4px;
+  outline: none;
+  margin-bottom: 8px;
+}
+
+.scrubber::-webkit-slider-thumb {
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  background: var(--accent-green);
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+.timeline-labels {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.75rem;
+  color: #888;
+}
+
+#timelineCurrent {
+  color: var(--accent-red);
+  font-weight: bold;
+}
+
+/* Cesium specific overrides */
+.cesium-widget-credits {
+  display: none !important;
+}

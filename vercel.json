@@ -1,0 +1,21 @@
+{
+  "rewrites": [
+    {
+      "source": "/api/opensky/:path*",
+      "destination": "https://opensky-network.org/:path*"
+    },
+    {
+      "source": "/api/adsbx/:path*",
+      "destination": "https://adsbexchange.com/api/aircraft/v2/:path*"
+    },
+    {
+      "source": "/api/news/:path*",
+      "destination": "https://newsapi.org/:path*"
+    },
+    {
+      "source": "/api/firms/:path*",
+      "destination": "https://firms.modaps.eosdis.nasa.gov/:path*"
+    }
+  ]
+}
+

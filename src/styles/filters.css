@@ -1,0 +1,84 @@
+/* filters.css - Visual Modes */
+
+#cesiumContainer {
+    transition: filter 0.5s ease-in-out;
+}
+
+/* Global Canvas Overlay used for custom effects like noise/scanlines */
+#filterOverlayCanvas {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    pointer-events: none;
+    z-index: 5;
+    mix-blend-mode: multiply;
+    opacity: 0;
+    transition: opacity 0.5s;
+}
+
+/* 1. THERMAL (FLIR) Mode */
+/* Using CSS hue-rotate and saturate on the Cesium Canvas for a false-color effect */
+#cesiumContainer.mode-thermal {
+    filter: hue-rotate(180deg) saturate(3) contrast(1.5) invert(0.1);
+}
+
+.overlay-thermal {
+    opacity: 0.3 !important;
+    mix-blend-mode: overlay !important;
+    background: radial-gradient(circle, transparent 50%, rgba(255, 100, 0, 0.2) 100%);
+}
+
+/* 2. NIGHT VISION Mode */
+#cesiumContainer.mode-nvg {
+    filter: saturate(0) brightness(0.6) contrast(1.5) sepia(1) hue-rotate(60deg);
+}
+
+.overlay-nvg {
+    opacity: 0.8 !important;
+    mix-blend-mode: multiply !important;
+    background: radial-gradient(circle, transparent 40%, rgba(0, 50, 0, 0.8) 100%);
+    position: relative;
+}
+
+/* Film grain effect applied via JS to the canvas for NVG */
+
+/* 3. CRT SCAN Mode */
+#cesiumContainer.mode-crt {
+    filter: contrast(1.2) brightness(0.9) saturate(1.2);
+}
+
+/* CRT Scanlines directly via CSS linear gradient overlay */
+.overlay-crt {
+    opacity: 1.0 !important;
+    mix-blend-mode: normal !important;
+    background:
+        linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%),
+        linear-gradient(90deg, rgba(255, 0, 0, 0.06), rgba(0, 255, 0, 0.02), rgba(0, 0, 255, 0.06));
+    background-size: 100% 4px, 3px 100%;
+    pointer-events: none;
+}
+
+/* Add slight RGB shifting to CRT */
+@keyframes crt-flicker {
+    0% {
+        opacity: 0.95;
+    }
+
+    5% {
+        opacity: 0.8;
+    }
+
+    10% {
+        opacity: 0.95;
+    }
+
+    100% {
+        opacity: 1;
+    }
+}
+
+.mode-crt {
+    animation: crt-flicker 0.1s infinite;
+}
