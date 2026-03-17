@@ -1,123 +1,151 @@
 import * as Cesium from 'cesium';
+import { fetchRealFlights } from '../api/flight-fetcher.js';
 
-const UPDATE_INTERVAL = 30000;
-const MAX_ENTITIES = 2000;
-const OPENSKY_URL = '/api/opensky/api/states/all?lamin=30.0&lomin=-130.0&lamax=70.0&lomax=60.0';
+const UPDATE_INTERVAL = 10000; // 10 seconds
+const MAX_RENDERED_FLIGHTS = 2000;
 const flightCache = new Map();
-let fallbackSeeded = false;
-let warned429 = false;
 
 export function initFlights(viewer) {
   const flightSource = new Cesium.CustomDataSource('flights');
+  flightSource.show = true;
   viewer.dataSources.add(flightSource);
 
   window.layerToggles = window.layerToggles || {};
+  window.layerToggles['comm'] = true;
+  window.layerToggles['mil'] = false;
+  window.layerToggles['heli'] = false;
+  window.layerToggles['priv'] = false;
+
   ['comm', 'mil', 'heli', 'priv'].forEach((key) => {
     const el = document.getElementById(`layer-${key}`);
-    window.layerToggles[key] = el ? el.checked : true;
     if (el) el.addEventListener('change', (event) => { window.layerToggles[key] = event.target.checked; });
   });
 
   async function fetchFlightData() {
-    try {
-      const res = await fetch(OPENSKY_URL);
-      if (res.status === 429) {
-        if (!warned429) {
-          console.warn('[Flights] OpenSky rate limit hit. Holding last state and using fallback if needed.');
-          warned429 = true;
-        }
-        if (!flightSource.entities.values.length) seedFallbackFlights(flightSource);
-        return;
-      }
-      if (!res.ok) throw new Error(`OpenSky HTTP ${res.status}`);
+    publishFlightStatus({ loading: true, error: null });
 
-      warned429 = false;
-      const data = await res.json();
-      processFlightStates(data.states || [], flightSource);
-    } catch (err) {
-      if (!fallbackSeeded && !flightSource.entities.values.length) {
-        seedFallbackFlights(flightSource);
+    try {
+      const result = await fetchRealFlights();
+      const flights = result.flights;
+      
+      processFlightStates(flights, flightSource);
+      
+      publishFlightStatus({
+        loading: false,
+        error: null,
+        source: result.source,
+        isCached: result.source === 'Cached' || result.source === 'Demo',
+        status: result.source,
+        timestamp: new Date(result.timestamp).toISOString(),
+        count: flights.length
+      });
+      
+      // Update HUD status label specifically
+      const statusText = document.getElementById('dataFreshnessText');
+      if (statusText) {
+        const count = flights.length;
+        statusText.textContent = `Flight Data: ${result.source} (${count} aircraft)`;
       }
-      console.warn('[Flights] Feed unavailable, keeping current flight layer state.');
+
+    } catch (e) {
+      publishFlightStatus({
+        loading: false,
+        error: 'Data temporarily unavailable',
+        source: 'error',
+        isCached: false,
+        status: 'error',
+        timestamp: new Date().toISOString(),
+      });
     }
   }
 
   fetchFlightData();
   setInterval(fetchFlightData, UPDATE_INTERVAL);
 
+  let lastFlightToggle = '';
   viewer.scene.postRender.addEventListener(() => {
+    const state = JSON.stringify(window.layerToggles);
+    if (state === lastFlightToggle) return;
+    lastFlightToggle = state;
     const showLabels = viewer.camera.positionCartographic.height < 2000000;
     flightSource.entities.values.forEach((entity) => {
-      const type = entity.properties?.type?.getValue
-        ? entity.properties.type.getValue()
-        : 'comm';
-      entity.show = !!window.layerToggles[type];
-      if (entity.label) entity.label.show = entity.show && showLabels;
+      const type = entity.properties?.type?.getValue ? entity.properties.type.getValue() : 'comm';
+      const visible = window.layerToggles[type] ?? true;
+      entity.show = visible;
+      if (entity.label) entity.label.show = visible && showLabels;
     });
   });
 }
 
-function processFlightStates(states, dataSource) {
+function publishFlightStatus(partial) {
+  window.appState = window.appState || {};
+  window.appState.dataSources = window.appState.dataSources || {};
+  window.appState.dataSources.flights = {
+    ...(window.appState.dataSources.flights || {}),
+    ...partial,
+  };
+  window.dispatchEvent(new CustomEvent('worldview:data-status', {
+    detail: {
+      source: 'flights',
+      ...(window.appState.dataSources.flights || {}),
+    },
+  }));
+}
+
+function processFlightStates(flights, dataSource) {
   const activeIds = new Set();
-  const counts = { comm: 0, mil: 0, heli: 0, priv: 0 };
-  let processed = 0;
+  const totalCounts = { comm: 0, mil: 0, heli: 0, priv: 0 };
+  
+  // Categorization logic
+  const getCategory = (f) => {
+    const t = f.t?.toUpperCase() || '';
+    if (t.startsWith('H') || t.includes('HELI')) return 'heli';
+    // Simplified military check
+    if (f.callsign?.startsWith('RCH') || f.callsign?.startsWith('AF') || f.r?.includes('MIL')) return 'mil';
+    return 'comm';
+  };
 
-  for (const state of states) {
-    if (processed >= MAX_ENTITIES) break;
-    if (state[5] === null || state[6] === null) continue;
+  const renderFlights = flights.slice(0, MAX_RENDERED_FLIGHTS);
 
-    const icao = state[0];
-    const callsign = (state[1] || 'UNKWN').trim();
-    const lng = state[5];
-    const lat = state[6];
-    const alt = state[7] || state[13] || 10000;
-    const velocity = state[9] || 0;
-    const heading = state[10] || 0;
-    const category = state[17] || 0;
+  for (const f of renderFlights) {
+    const icao = f.icao24;
+    const callsign = f.callsign;
+    const lng = f.lon;
+    const lat = f.lat;
+    const alt = f.alt || 10000;
+    const velocity = f.speed || 0;
+    const heading = f.heading || 0;
+    const type = getCategory(f);
 
     activeIds.add(icao);
-    processed += 1;
+    totalCounts[type] = (totalCounts[type] || 0) + 1;
 
-    let type = 'comm';
     let color = Cesium.Color.WHITE;
-    if (category === 7) {
-      type = 'heli';
+    let pixelSize = 4;
+    if (type === 'heli') {
       color = Cesium.Color.CYAN;
-    } else if (category === 9 || category === 13) {
-      type = 'mil';
-      color = Cesium.Color.fromCssColorString('#ff6b3d');
-    } else if (category === 11 || category === 1) {
-      type = 'priv';
+    } else if (type === 'mil') {
+      color = Cesium.Color.ORANGERED;
+      pixelSize = 5;
+    } else if (type === 'priv') {
       color = Cesium.Color.YELLOW;
     }
 
-    counts[type] += 1;
-
     const position = Cesium.Cartesian3.fromDegrees(lng, lat, alt);
-    const time = Cesium.JulianDate.now();
     const existing = flightCache.get(icao);
 
     if (!existing) {
-      const posProp = new Cesium.SampledPositionProperty();
-      posProp.addSample(time, position);
-
       const entity = dataSource.entities.add({
         id: icao,
         name: callsign,
-        position: posProp,
-        billboard: {
-          image: makePlaneBillboard(color.toCssColorString()),
-          scale: 0.95,
-          rotation: Cesium.Math.toRadians(heading),
-          alignedAxis: Cesium.Cartesian3.UNIT_Z,
-        },
-        path: {
-          resolution: 1,
-          material: new Cesium.PolylineGlowMaterialProperty({ glowPower: 0.1, color: color.withAlpha(0.65) }),
-          width: 2,
-          leadTime: 0,
-          trailTime: 90,
-          show: false,
+        position: new Cesium.ConstantPositionProperty(position),
+        point: {
+          pixelSize,
+          color,
+          outlineColor: Cesium.Color.BLACK,
+          outlineWidth: 1,
+          disableDepthTestDistance: 0,
+          heightReference: Cesium.HeightReference.NONE,
         },
         label: {
           text: `${callsign}\n${Math.round(alt)}m`,
@@ -133,123 +161,52 @@ function processFlightStates(states, dataSource) {
           type,
           icao,
           callsign,
-          origin: state[2],
-          destination: state[12],
+          origin: f.origin || '',
+          destination: f.destination || '',
           altitude: alt,
           velocity,
           heading,
-          data: {
-            lat,
-            lon: lng,
-            track: heading,
-            velocity,
-            baro_altitude: alt,
-          },
+          data: { lat, lon: lng, track: heading, velocity, baro_altitude: alt },
         },
       });
 
+      entity.show = true;
       entity.worldview = {
         kind: 'flight',
         color,
         id: icao,
-        data: {
-          lat,
-          lon: lng,
-          track: heading,
-          velocity,
-          baro_altitude: alt,
-        },
+        data: { lat, lon: lng, track: heading, velocity, baro_altitude: alt },
       };
-      flightCache.set(icao, { entity, posProp });
+      flightCache.set(icao, { entity });
     } else {
-      existing.posProp.addSample(time, position);
-      existing.entity.billboard.rotation = Cesium.Math.toRadians(heading);
+      existing.entity.position = new Cesium.ConstantPositionProperty(position);
+      existing.entity.point.pixelSize = pixelSize;
+      existing.entity.point.color = color;
       existing.entity.label.text = `${callsign}\n${Math.round(alt)}m`;
       existing.entity.properties.altitude = alt;
       existing.entity.properties.velocity = velocity;
       existing.entity.properties.heading = heading;
-      existing.entity.properties.destination = state[12];
-      existing.entity.properties.data = {
-        lat,
-        lon: lng,
-        track: heading,
-        velocity,
-        baro_altitude: alt,
-      };
-      existing.entity.worldview.data = {
-        lat,
-        lon: lng,
-        track: heading,
-        velocity,
-        baro_altitude: alt,
-      };
+      existing.entity.properties.data = { lat, lon: lng, track: heading, velocity, baro_altitude: alt };
+      existing.entity.worldview.data = { lat, lon: lng, track: heading, velocity, baro_altitude: alt };
     }
   }
 
+  // Remove stale aircraft
   for (const [id, cached] of flightCache) {
-    if (!activeIds.has(id) && !id.startsWith('demo-')) {
+    if (!activeIds.has(id)) {
       dataSource.entities.remove(cached.entity);
       flightCache.delete(id);
     }
   }
 
-  updateFlightCounts(counts, processed);
-}
-
-function seedFallbackFlights(dataSource) {
-  if (fallbackSeeded) return;
-  fallbackSeeded = true;
-
-  const fallback = [
-    { id: 'demo-1', callsign: 'AFR402', lat: 48.9, lng: 2.4, alt: 10800, velocity: 236, heading: 84, type: 'comm' },
-    { id: 'demo-2', callsign: 'DLH118', lat: 51.4, lng: -0.3, alt: 11200, velocity: 240, heading: 101, type: 'comm' },
-    { id: 'demo-3', callsign: 'RCH204', lat: 37.1, lng: 36.8, alt: 9400, velocity: 210, heading: 132, type: 'mil' },
-    { id: 'demo-4', callsign: 'N900JV', lat: 40.7, lng: -73.8, alt: 12400, velocity: 228, heading: 59, type: 'priv' },
-  ];
-
-  const counts = { comm: 0, mil: 0, heli: 0, priv: 0 };
-  fallback.forEach((item) => {
-    const color = item.type === 'mil' ? Cesium.Color.fromCssColorString('#ff6b3d') : item.type === 'priv' ? Cesium.Color.YELLOW : Cesium.Color.WHITE;
-    counts[item.type] += 1;
-    const entity = dataSource.entities.add({
-      id: item.id,
-      name: item.callsign,
-      position: Cesium.Cartesian3.fromDegrees(item.lng, item.lat, item.alt),
-      billboard: { image: makePlaneBillboard(color.toCssColorString()), scale: 0.95, rotation: Cesium.Math.toRadians(item.heading), alignedAxis: Cesium.Cartesian3.UNIT_Z },
-      path: { show: false },
-      label: { text: `${item.callsign}\n${item.alt}m`, font: '9pt "JetBrains Mono"', fillColor: color, show: false },
-      properties: { type: item.type, icao: item.id, callsign: item.callsign, altitude: item.alt, velocity: item.velocity, heading: item.heading },
-    });
-    entity.properties.data = {
-      lat: item.lat,
-      lon: item.lng,
-      track: item.heading,
-      velocity: item.velocity,
-      baro_altitude: item.alt,
-    };
-    entity.worldview = {
-      kind: 'flight',
-      color,
-      id: item.id,
-      data: {
-        lat: item.lat,
-        lon: item.lng,
-        track: item.heading,
-        velocity: item.velocity,
-        baro_altitude: item.alt,
-      },
-    };
-    flightCache.set(item.id, { entity, posProp: null });
-  });
-
-  updateFlightCounts(counts, fallback.length);
+  updateFlightCounts(totalCounts, flights.length);
 }
 
 function updateFlightCounts(counts, total) {
   ['comm', 'mil', 'heli', 'priv'].forEach((key) => {
     const badge = document.getElementById(`badge-${key}`);
     if (badge) {
-      badge.textContent = counts[key];
+      badge.textContent = counts[key] || 0;
       badge.classList.remove('updated');
       void badge.offsetWidth;
       badge.classList.add('updated');
@@ -258,10 +215,8 @@ function updateFlightCounts(counts, total) {
 
   const counter = document.getElementById('hud-count-flights');
   if (counter) counter.textContent = total;
-  if (window.appState) window.appState.stats.flights = total;
-}
-
-function makePlaneBillboard(color) {
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="${color}"><path d="M21 16v-2l-8-5V3.5c0-.83-.67-1.5-1.5-1.5S10 2.67 10 3.5V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5z"/></svg>`;
-  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+  if (window.appState) {
+      window.appState.stats = window.appState.stats || {};
+      window.appState.stats.flights = total;
+  }
 }

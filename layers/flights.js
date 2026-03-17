@@ -1,6 +1,86 @@
 import { Cesium, buildLabel, createPosition, createPulseAxis } from "../globe.js";
 import { ICONS } from "../icons.js";
 
+export function removeFlightPath(viewer) {
+  ['__flight_path__', '__flight_end__'].forEach(id => {
+    const e = viewer.entities.getById(id);
+    if (e) viewer.entities.remove(e);
+  });
+}
+
+export function showFlightPath(viewer, entity) {
+  removeFlightPath(viewer);
+  const meta = entity.worldview?.meta;
+  if (!meta) return;
+
+  const pos = entity.position?.getValue
+    ? entity.position.getValue(Cesium.JulianDate.now())
+    : null;
+  if (!pos) return;
+
+  const carto = Cesium.Cartographic.fromCartesian(pos);
+  const lat = Cesium.Math.toDegrees(carto.latitude);
+  const lon = Cesium.Math.toDegrees(carto.longitude);
+  const heading = meta.heading || 0;
+  const speed = parseFloat(meta.speedKts || 0) / 1.94384; // back to m/s
+
+  if (speed < 10) return; // skip stationary
+
+  const R = 6371000;
+  let curLat = lat * Math.PI / 180;
+  let curLon = lon * Math.PI / 180;
+  const hdg = heading * Math.PI / 180;
+  const distPerStep = speed * 60; // meters per minute
+  const d = distPerStep / R;
+
+  const positions = [];
+  for (let i = 0; i <= 60; i++) {
+    const newLat = Math.asin(
+      Math.sin(curLat) * Math.cos(d) +
+      Math.cos(curLat) * Math.sin(d) * Math.cos(hdg)
+    );
+    const newLon = curLon + Math.atan2(
+      Math.sin(hdg) * Math.sin(d) * Math.cos(curLat),
+      Math.cos(d) - Math.sin(curLat) * Math.sin(newLat)
+    );
+    const alt = carto.height || 10000;
+    positions.push(
+      Cesium.Cartesian3.fromDegrees(
+        newLon * 180 / Math.PI,
+        newLat * 180 / Math.PI,
+        alt
+      )
+    );
+    curLat = newLat;
+    curLon = newLon;
+  }
+
+  viewer.entities.add({
+    id: '__flight_path__',
+    polyline: {
+      positions: positions,
+      width: 1.5,
+      material: new Cesium.PolylineDashMaterialProperty({
+        color: Cesium.Color.fromCssColorString('#ffffff').withAlpha(0.5),
+        dashLength: 12,
+      }),
+    },
+  });
+
+  // Show projected endpoint
+  const endPos = positions[positions.length - 1];
+  viewer.entities.add({
+    id: '__flight_end__',
+    position: endPos,
+    point: {
+      pixelSize: 8,
+      color: Cesium.Color.fromCssColorString('#ffaa00').withAlpha(0.8),
+      outlineColor: Cesium.Color.WHITE.withAlpha(0.4),
+      outlineWidth: 1,
+    },
+  });
+}
+
 function formatAircraftMeta(item, isMilitary = false) {
   return {
     callsign: item.callsign || "UNKNOWN",
@@ -17,13 +97,14 @@ function formatAircraftMeta(item, isMilitary = false) {
 function createFlightEntity(viewer, layer, item, isMilitary) {
   const entity = viewer.entities.add({
     id: `${layer.id}:${item.id}`,
-    position: createPosition(item.lon, item.lat, item.alt || 0),
-    billboard: {
-      image: isMilitary ? ICONS.military : ICONS.plane,
-      scale: 1,
-      verticalOrigin: Cesium.VerticalOrigin.CENTER,
-      rotation: Cesium.Math.toRadians((item.track || 0) - 90),
-      alignedAxis: Cesium.Cartesian3.ZERO,
+    position: Cesium.Cartesian3.fromDegrees(item.lon, item.lat, item.alt),
+    point: {
+      pixelSize: 5,
+      color: isMilitary ? Cesium.Color.ORANGERED : Cesium.Color.WHITE,
+      outlineColor: Cesium.Color.BLACK,
+      outlineWidth: 1,
+      disableDepthTestDistance: Number.POSITIVE_INFINITY,
+      heightReference: Cesium.HeightReference.NONE,
     },
     label: buildLabel(isMilitary ? `${item.callsign} [MIL]` : item.callsign || "FLIGHT"),
     ellipse: isMilitary
@@ -52,8 +133,7 @@ function syncEntities({ viewer, layer, records, isMilitary, app }) {
       entity = createFlightEntity(viewer, layer, item, isMilitary);
       layer.entities.set(id, entity);
     }
-    entity.position = createPosition(item.lon, item.lat, item.alt || 0);
-    entity.billboard.rotation = Cesium.Math.toRadians((item.track || 0) - 90);
+    entity.position = Cesium.Cartesian3.fromDegrees(item.lon, item.lat, item.alt);
     entity.label.text = isMilitary ? `${item.callsign} [MIL]` : item.callsign || "FLIGHT";
     entity.label.show = layer.enabled && viewer.camera.positionCartographic.height < 2000000;
     entity.show = layer.enabled;
@@ -112,12 +192,12 @@ export function createFlightLayers(viewer, app) {
         country: state[2],
         lon: state[5],
         lat: state[6],
-        alt: state[13] || state[7] || 0,
+        alt: state[7] !== null ? state[7] : (state[13] !== null ? state[13] : 10000),
         onGround: state[8],
         velocity: state[9],
         track: state[10],
         squawk: state[14],
-      })).filter((item) => item.lat != null && item.lon != null && !item.onGround).slice(0, 2500);
+      })).filter((item) => item.lat != null && item.lon != null && !item.onGround).slice(0, 500);
       syncEntities({ viewer, layer: commercial, records, isMilitary: false, app });
       app.reportAPIStatus("OpenSky (Commercial)", "NOMINAL");
     } catch (error) {

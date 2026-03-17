@@ -15,8 +15,6 @@ export function initSnapshotAgent(viewer, appState) {
         if (lastFlightCount > 0) {
             const changeRatio = Math.abs(currentFlights - lastFlightCount) / lastFlightCount;
             if (changeRatio > 0.5) {
-                console.warn('ANOMALY DETECTED: Significant change in tracked aviation assets. Auto-recording snapshot.');
-
                 const pos = viewer.camera.positionCartographic;
                 const snap = {
                     event: 'AVIATION_ANOMALY',

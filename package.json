@@ -4,15 +4,22 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "concurrently \"npm run backend\" \"npm run frontend\"",
+    "backend": "node backend.js",
+    "frontend": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "node src/utils/__tests__/run-tests.js"
   },
   "devDependencies": {
-    "vite": "^7.3.1"
+    "vite": "^7.3.1",
+    "vite-plugin-cesium": "^1.2.23"
   },
   "dependencies": {
+    "concurrently": "^9.2.1",
+    "cors": "^2.8.6",
+    "express": "^5.2.1",
+    "node-fetch": "^2.7.0",
     "satellite.js": "^6.0.2"
   }
 }
-

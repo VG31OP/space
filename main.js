@@ -1,12 +1,14 @@
 import "./style.css";
 import { Cesium, initGlobe } from "./globe.js";
 import { createFlightLayers } from "./layers/flights.js";
-import { createSatelliteLayers } from "./layers/satellites.js";
+import { createSatelliteLayers, showSatelliteTrack, removeSatelliteTrack } from "./layers/satellites.js";
 import { createShipLayers } from "./layers/ships.js";
+import { showFlightPath, removeFlightPath } from "./layers/flights.js";
 import { createIntelLayers } from "./layers/intel.js";
 import { createAiPanel } from "./ui/ai.js";
 import { createModes } from "./ui/modes.js";
 import { createLayerPanel } from "./ui/panel.js";
+import "./ui/entity-popup.js";
 
 window.__ENV = {
   CESIUM_TOKEN: import.meta.env.VITE_CESIUM_TOKEN || "",
@@ -21,6 +23,8 @@ function formatNumber(value) {
 }
 
 function createApp(viewer) {
+  window.viewer = viewer; // User scripts expect this global
+
   const statusPill = document.getElementById("statusPill");
   const statusDot = document.getElementById("statusDot");
   const statusText = document.getElementById("statusText");
@@ -158,6 +162,10 @@ function createApp(viewer) {
 
   function hidePopup() {
     popup.classList.add("hidden");
+    removeSatelliteTrack(viewer);
+    removeFlightPath(viewer);
+    if(window.clearSatTrack) window.clearSatTrack();
+    if(window.clearFlightPath) window.clearFlightPath();
   }
 
   function drawOrbit(entity) {
@@ -192,7 +200,8 @@ function createApp(viewer) {
       <div class="popup-actions">
         <button class="popup-action" data-action="track">TRACK</button>
         <button class="popup-action" data-action="fly">FLY TO</button>
-        ${kind === "satellite" ? '<button class="popup-action" data-action="orbit">SHOW ORBIT</button>' : ""}
+        ${kind === "satellite" ? '<button class="popup-action" data-action="orbit">SHOW ORBIT</button><button class="popup-action" data-action="sattrack">SHOW TRACK</button>' : ""}
+        ${kind === "aircraft" ? '<button class="popup-action" data-action="flightpath">SHOW PATH</button>' : ""}
       </div>
     `;
 
@@ -207,6 +216,8 @@ function createApp(viewer) {
           }
         }
         if (action === "orbit") drawOrbit(entity);
+        if (action === "sattrack") showSatelliteTrack(viewer, entity);
+        if (action === "flightpath") showFlightPath(viewer, entity);
       });
     });
 
@@ -215,8 +226,16 @@ function createApp(viewer) {
 
   viewer.screenSpaceEventHandler.setInputAction((click) => {
     const picked = viewer.scene.pick(click.position);
-    if (Cesium.defined(picked) && picked.id?.worldview) showEntityPopup(picked.id);
-    else hidePopup();
+    if (Cesium.defined(picked) && picked.id?.worldview) {
+      const entity = picked.id;
+      showEntityPopup(entity);
+      if (window.showSatTrack && entity.worldview.kind === "satellite") window.showSatTrack(entity);
+      if (window.showFlightPath && entity.worldview.kind === "aircraft") window.showFlightPath(entity);
+      // Auto-show track/path on click
+      if (entity.worldview.kind === "aircraft") showFlightPath(viewer, entity);
+    } else {
+      hidePopup();
+    }
   }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
 
   viewer.camera.changed.addEventListener(() => {
@@ -330,4 +349,6 @@ bootstrap().catch((error) => {
   document.getElementById("statusText").textContent = "ALERT";
   document.getElementById("statusPill").classList.add("alert");
 });
+
+(function(){const c=document.getElementById('starfield');if(!c)return;const x=c.getContext('2d');let s=[];function resize(){c.width=innerWidth;c.height=innerHeight;}function init(){s=[];for(let i=0;i<350;i++)s.push({x:Math.random()*c.width,y:Math.random()*c.height,r:Math.random()*1.1+0.2,a:Math.random()*0.6+0.2,d:Math.random()>0.5?1:-1,sp:Math.random()*0.015+0.004});}let ss=null;function shoot(){ss={x:Math.random()*c.width*0.6,y:Math.random()*c.height*0.25,a:1,len:Math.random()*100+60,spd:Math.random()*5+3,ang:Math.PI/4+(Math.random()-0.5)*0.3};}function draw(){x.clearRect(0,0,c.width,c.height);s.forEach(p=>{p.a+=p.sp*p.d;if(p.a>1){p.a=1;p.d=-1;}if(p.a<0.1){p.a=0.1;p.d=1;}x.beginPath();x.arc(p.x,p.y,p.r,0,Math.PI*2);x.fillStyle='rgba(200,220,255,'+p.a+')';x.fill();});if(ss){const dx=Math.cos(ss.ang)*ss.len;const dy=Math.sin(ss.ang)*ss.len;const g=x.createLinearGradient(ss.x,ss.y,ss.x+dx,ss.y+dy);g.addColorStop(0,'rgba(255,255,255,0)');g.addColorStop(1,'rgba(255,255,255,'+ss.a+')');x.beginPath();x.moveTo(ss.x,ss.y);x.lineTo(ss.x+dx,ss.y+dy);x.strokeStyle=g;x.lineWidth=1.5;x.stroke();ss.x+=Math.cos(ss.ang)*ss.spd;ss.y+=Math.sin(ss.ang)*ss.spd;ss.a-=0.018;if(ss.a<=0)ss=null;}requestAnimationFrame(draw);}resize();init();draw();setInterval(shoot,3500);window.addEventListener('resize',()=>{resize();init();});})();
 

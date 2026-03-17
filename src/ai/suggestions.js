@@ -31,6 +31,7 @@ async function refreshSmartView() {
         max_tokens: 400,
       }),
     });
+    if (!res.ok) throw new Error(`HTTP Error ${res.status}`);
     const data = await res.json();
     let suggestions = [];
     try {

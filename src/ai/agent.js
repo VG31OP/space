@@ -50,7 +50,6 @@ export async function processNatureLanguageCommand(commandText, viewer, appState
         return `Command accepted: ${actionData.action}`;
 
     } catch (error) {
-        console.error("AI Command Parsing failed:", error);
         return "Error: Command not recognized or Ollama is offline.";
     }
 }

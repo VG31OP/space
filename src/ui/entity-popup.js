@@ -1,5 +1,5 @@
 import * as Cesium from 'cesium';
-import * as satellite from 'satellite.js';
+import { clearSatTrack, showSatTrack } from '../layers/satellites.js';
 
 let selectedEntity = null;
 let isTracking = false;
@@ -21,14 +21,14 @@ export function initEntityInteractions(viewer) {
     renderPopup(viewer, popup, selectedEntity);
 
     if (isSatellite(selectedEntity)) {
-      showSatelliteTrack(selectedEntity);
-      removeFlightPath();
+      showSatTrack(selectedEntity);
+      clearFlightPath();
     } else if (isFlight(selectedEntity)) {
       showFlightPath(selectedEntity);
-      removeSatelliteTrack();
+      clearSatTrack();
     } else {
-      removeSatelliteTrack();
-      removeFlightPath();
+      clearSatTrack();
+      clearFlightPath();
     }
   }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
 
@@ -49,13 +49,13 @@ export function initEntityInteractions(viewer) {
     }
 
     if (action.dataset.action === 'show-track') {
-      if (viewer.entities.getById('__sat_track__')) removeSatelliteTrack();
-      else showSatelliteTrack(selectedEntity);
+      if (viewer.entities.getById('st1')) clearSatTrack();
+      else showSatTrack(selectedEntity);
       return;
     }
 
     if (action.dataset.action === 'show-flight') {
-      if (viewer.entities.getById('__flight_path__')) removeFlightPath();
+      if (viewer.entities.getById('fp1')) clearFlightPath();
       else showFlightPath(selectedEntity);
       return;
     }
@@ -79,8 +79,8 @@ function hidePopup(viewer, popup) {
   viewer.trackedEntity = undefined;
   popup.classList.add('hidden');
   popup.innerHTML = '';
-  removeSatelliteTrack();
-  removeFlightPath();
+  clearSatTrack();
+  clearFlightPath();
 }
 
 function renderPopup(viewer, popup, entity) {
@@ -120,178 +120,6 @@ function isSatellite(entity) {
 function isFlight(entity) {
   const type = readProperty(entity, 'type');
   return ['comm', 'mil', 'heli', 'priv'].includes(String(type || '').toLowerCase());
-}
-
-function showSatelliteTrack(entity) {
-  removeSatelliteTrack();
-
-  const satrec = entity.properties?.satrec?.getValue
-    ? entity.properties.satrec.getValue()
-    : entity.worldview?.satrec;
-  if (!satrec || !activeViewer) return;
-
-  const now = new Date();
-  const trackPositions = [];
-  const groundPositions = [];
-
-  for (let i = 0; i <= 180; i += 1) {
-    const time = new Date(now.getTime() + i * 30 * 1000);
-    try {
-      const posVel = satellite.propagate(satrec, time);
-      if (!posVel || !posVel.position || typeof posVel.position === 'boolean') continue;
-      const gmst = satellite.gstime(time);
-      const geo = satellite.eciToGeodetic(posVel.position, gmst);
-      const lat = satellite.degreesLat(geo.latitude);
-      const lon = satellite.degreesLong(geo.longitude);
-      const alt = geo.height * 1000;
-      trackPositions.push(Cesium.Cartesian3.fromDegrees(lon, lat, alt));
-      groundPositions.push(Cesium.Cartesian3.fromDegrees(lon, lat, 0));
-    } catch {
-      continue;
-    }
-  }
-
-  activeViewer.entities.add({
-    id: '__sat_track__',
-    polyline: {
-      positions: trackPositions,
-      width: 1.5,
-      material: new Cesium.PolylineDashMaterialProperty({
-        color: Cesium.Color.fromCssColorString('#00ffff').withAlpha(0.7),
-        dashLength: 16,
-        dashPattern: 0xFF00,
-      }),
-      clampToGround: false,
-    },
-  });
-
-  activeViewer.entities.add({
-    id: '__sat_ground__',
-    polyline: {
-      positions: groundPositions,
-      width: 1,
-      material: new Cesium.PolylineDashMaterialProperty({
-        color: Cesium.Color.fromCssColorString('#00ff88').withAlpha(0.35),
-        dashLength: 8,
-      }),
-      clampToGround: true,
-    },
-  });
-
-  const posVel = satellite.propagate(satrec, now);
-  if (!posVel || !posVel.position || typeof posVel.position === 'boolean') return;
-  const gmst = satellite.gstime(now);
-  const geo = satellite.eciToGeodetic(posVel.position, gmst);
-  const firstGeo = {
-    lat: satellite.degreesLat(geo.latitude),
-    lon: satellite.degreesLong(geo.longitude),
-  };
-  const currentPosition = entity.position?.getValue(Cesium.JulianDate.now());
-  if (!currentPosition) return;
-
-  activeViewer.entities.add({
-    id: '__sat_nadir__',
-    polyline: {
-      positions: [
-        currentPosition,
-        Cesium.Cartesian3.fromDegrees(firstGeo.lon, firstGeo.lat, 0),
-      ],
-      width: 1,
-      material: Cesium.Color.fromCssColorString('#ffffff').withAlpha(0.2),
-    },
-  });
-
-  activeViewer.entities.add({
-    id: '__sat_look__',
-    position: Cesium.Cartesian3.fromDegrees(firstGeo.lon, firstGeo.lat, 100),
-    ellipse: {
-      semiMajorAxis: 120000,
-      semiMinorAxis: 120000,
-      material: Cesium.Color.fromCssColorString('#00ffff').withAlpha(0.15),
-      outline: true,
-      outlineColor: Cesium.Color.fromCssColorString('#00ffff').withAlpha(0.6),
-      outlineWidth: 2,
-      heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
-    },
-  });
-}
-
-function removeSatelliteTrack() {
-  ['__sat_track__', '__sat_ground__', '__sat_nadir__', '__sat_look__'].forEach((id) => {
-    const entity = activeViewer?.entities.getById(id);
-    if (entity) activeViewer.entities.remove(entity);
-  });
-}
-
-function showFlightPath(entity) {
-  removeFlightPath();
-  const data = entity.properties?.data?.getValue
-    ? entity.properties.data.getValue()
-    : entity.worldview?.data;
-  if (!data || !activeViewer) return;
-
-  const lat = data.lat;
-  const lon = data.lon;
-  const heading = data.track || 0;
-  const speed = data.velocity || 250;
-  const positions = [];
-  const earthRadius = 6371000;
-  let curLat = lat * Math.PI / 180;
-  let curLon = lon * Math.PI / 180;
-  const hdg = heading * Math.PI / 180;
-  const distPerStep = speed * 60;
-  const d = distPerStep / earthRadius;
-
-  for (let i = 0; i <= 60; i += 1) {
-    const newLat = Math.asin(
-      Math.sin(curLat) * Math.cos(d) +
-      Math.cos(curLat) * Math.sin(d) * Math.cos(hdg),
-    );
-    const newLon = curLon + Math.atan2(
-      Math.sin(hdg) * Math.sin(d) * Math.cos(curLat),
-      Math.cos(d) - Math.sin(curLat) * Math.sin(newLat),
-    );
-    const alt = data.baro_altitude || 10000;
-    positions.push(
-      Cesium.Cartesian3.fromDegrees(
-        newLon * 180 / Math.PI,
-        newLat * 180 / Math.PI,
-        alt,
-      ),
-    );
-    curLat = newLat;
-    curLon = newLon;
-  }
-
-  activeViewer.entities.add({
-    id: '__flight_path__',
-    polyline: {
-      positions,
-      width: 1.5,
-      material: new Cesium.PolylineDashMaterialProperty({
-        color: Cesium.Color.fromCssColorString('#ffffff').withAlpha(0.5),
-        dashLength: 12,
-      }),
-    },
-  });
-
-  activeViewer.entities.add({
-    id: '__flight_end__',
-    position: positions[positions.length - 1],
-    point: {
-      pixelSize: 8,
-      color: Cesium.Color.fromCssColorString('#ffaa00').withAlpha(0.8),
-      outlineColor: Cesium.Color.WHITE.withAlpha(0.4),
-      outlineWidth: 1,
-    },
-  });
-}
-
-function removeFlightPath() {
-  ['__flight_path__', '__flight_end__'].forEach((id) => {
-    const entity = activeViewer?.entities.getById(id);
-    if (entity) activeViewer.entities.remove(entity);
-  });
 }
 
 function readProps(entity) {
@@ -386,4 +214,71 @@ function iconFly() {
 
 function iconOrbit() {
   return '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><ellipse cx="8" cy="8" rx="6" ry="3.2"/><circle cx="8" cy="8" r="1.3" fill="currentColor" stroke="none"/></svg>';
+}
+
+function clearFlightPath() {
+  ['fp1', 'fp2'].forEach((id) => {
+    const entity = window.viewer?.entities.getById(id);
+    if (entity) {
+      window.viewer.entities.remove(entity);
+    }
+  });
+}
+
+function showFlightPath(entity) {
+  clearFlightPath();
+
+  const data = entity?.properties?.data?.getValue
+    ? entity.properties.data.getValue(Cesium.JulianDate.now())
+    : null;
+  if (!data || !window.viewer) return;
+
+  const lat = data.lat ?? data[6];
+  const lon = data.lon ?? data[5];
+  const speed = data.velocity ?? data[9] ?? 220;
+  const heading = (data.true_track ?? data[10] ?? 0) * Math.PI / 180;
+  const altitude = data.baro_altitude ?? data[7] ?? 10000;
+  const R = 6371000;
+  const angularDistance = (speed * 60) / R;
+  let currentLat = lat * Math.PI / 180;
+  let currentLon = lon * Math.PI / 180;
+  const pts = [];
+
+  for (let i = 0; i < 60; i += 1) {
+    pts.push(Cesium.Cartesian3.fromDegrees(currentLon * 180 / Math.PI, currentLat * 180 / Math.PI, altitude));
+
+    const nextLat = Math.asin(
+      Math.sin(currentLat) * Math.cos(angularDistance) +
+      Math.cos(currentLat) * Math.sin(angularDistance) * Math.cos(heading),
+    );
+    const nextLon = currentLon + Math.atan2(
+      Math.sin(heading) * Math.sin(angularDistance) * Math.cos(currentLat),
+      Math.cos(angularDistance) - Math.sin(currentLat) * Math.sin(nextLat),
+    );
+    currentLat = nextLat;
+    currentLon = nextLon;
+  }
+
+  window.viewer.entities.add({
+    id: 'fp1',
+    polyline: {
+      positions: pts,
+      width: 1.5,
+      material: new Cesium.PolylineDashMaterialProperty({
+        color: Cesium.Color.WHITE.withAlpha(0.45),
+        dashLength: 10,
+      }),
+    },
+  });
+
+  window.viewer.entities.add({
+    id: 'fp2',
+    position: pts[pts.length - 1],
+    point: {
+      pixelSize: 7,
+      color: Cesium.Color.fromCssColorString('#ffaa00'),
+      outlineColor: Cesium.Color.WHITE,
+      outlineWidth: 1,
+    },
+  });
 }

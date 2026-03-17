@@ -1,7 +1,8 @@
 import * as Cesium from 'cesium';
+import { safeFetch } from '../utils/safeFetch.js';
 
 // NASA FIRMS CSV feed for last 24h wildfire hotspots (no API key needed for public endpoint)
-const FIRMS_URL = 'https://firms.modaps.eosdis.nasa.gov/data/active_fire/modis-c6.1/csv/MODIS_C6_1_Global_24h.csv';
+const FIRMS_URL = '/api/firms/data/active_fire/modis-c6.1/csv/MODIS_C6_1_Global_24h.csv';
 
 export async function initWildfire(viewer) {
     const fireSource = new Cesium.CustomDataSource('wildfire');
@@ -17,9 +18,12 @@ export async function initWildfire(viewer) {
 
     try {
         const res = await fetch(FIRMS_URL);
-        if (!res.ok) throw new Error('FIRMS fetch failed');
+        if (!res.ok) return;
+        
         const csv = await res.text();
         const hotspots = parseFIRMSCsv(csv);
+
+        if (!hotspots || hotspots.length === 0) return;
 
         hotspots.slice(0, 1000).forEach((hs, i) => {
             fireSource.entities.add({
@@ -40,10 +44,8 @@ export async function initWildfire(viewer) {
 
         const b = document.getElementById('badge-fire');
         if (b) b.textContent = Math.min(hotspots.length, 1000);
-        console.log(`Wildfire layer: ${hotspots.length} hotspots loaded.`);
-    } catch (err) {
-        console.warn('NASA FIRMS fetch failed, seeding demo hotspots:', err.message);
-        seedFallbackFires(fireSource);
+    } catch {
+       return;
     }
 
     viewer.scene.postRender.addEventListener(() => {
@@ -52,33 +54,20 @@ export async function initWildfire(viewer) {
 }
 
 function parseFIRMSCsv(csv) {
+    if (!csv) return [];
     const lines = csv.trim().split('\n');
+    if (lines.length < 2) return [];
+    
     const header = lines[0].split(',');
     const latIdx = header.indexOf('latitude');
     const lngIdx = header.indexOf('longitude');
     const briIdx = header.indexOf('brightness');
     const conIdx = header.indexOf('confidence');
+    
+    if (latIdx === -1 || lngIdx === -1) return [];
+
     return lines.slice(1).map(l => {
         const p = l.split(',');
         return { lat: parseFloat(p[latIdx]), lng: parseFloat(p[lngIdx]), brightness: parseFloat(p[briIdx]) || 300, confidence: p[conIdx] || 'nominal' };
     }).filter(h => !isNaN(h.lat) && !isNaN(h.lng));
-}
-
-function seedFallbackFires(fireSource) {
-    const DEMO = [
-        { lat: 36.7, lng: -119.4 }, { lat: 34.1, lng: -118.2 }, { lat: -33.8, lng: 151.2 },
-        { lat: -3.7, lng: -62.2 }, { lat: 60.5, lng: 30.2 }, { lat: 40.4, lng: -3.7 }
-    ];
-    DEMO.forEach((f, i) => {
-        fireSource.entities.add({
-            id: `fire-demo-${i}`,
-            name: '🔥 Wildfire Hotspot',
-            position: Cesium.Cartesian3.fromDegrees(f.lng, f.lat, 0),
-            point: { pixelSize: 8, color: Cesium.Color.fromCssColorString('#ff4400').withAlpha(0.85), outlineColor: Cesium.Color.ORANGE, outlineWidth: 1 },
-            show: false,
-            properties: { type: 'fire', brightness: 340, confidence: 'nominal' }
-        });
-    });
-    const b = document.getElementById('badge-fire');
-    if (b) b.textContent = DEMO.length;
 }

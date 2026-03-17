@@ -329,6 +329,12 @@ button {
   animation: pulse-red 0.9s infinite;
 }
 
+.status-dot.warn {
+  background: #ffd166;
+  box-shadow: 0 0 8px #ffd166;
+  animation: pulse-green 1.5s infinite;
+}
+
 .status-text {
   font-family: 'JetBrains Mono', monospace;
   font-size: 11px;
@@ -359,6 +365,45 @@ button {
   height: 20px;
   background: #1a2d22;
   margin: 0 6px;
+}
+
+.data-freshness {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: 6px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  border: 1px solid rgba(0, 255, 136, 0.2);
+  background: rgba(0, 0, 0, 0.25);
+}
+
+.freshness-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+}
+
+.freshness-dot.green {
+  background: #00ff88;
+  box-shadow: 0 0 8px rgba(0, 255, 136, 0.8);
+}
+
+.freshness-dot.yellow {
+  background: #ffd166;
+  box-shadow: 0 0 8px rgba(255, 209, 102, 0.8);
+}
+
+.freshness-dot.red {
+  background: #ff4d4d;
+  box-shadow: 0 0 8px rgba(255, 77, 77, 0.8);
+}
+
+.freshness-text {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  color: #9cb0be;
 }
 
 @keyframes pulse-green {

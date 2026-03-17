@@ -30,7 +30,6 @@ export async function analyzeCurrentView(viewer) {
                 resolve(res.trim());
             })
             .catch(err => {
-                console.error("VLM Error:", err);
                 reject("Vision analysis failed. Ensure Ollama is running with 'llava' model.");
             });
     });

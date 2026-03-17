@@ -37,10 +37,9 @@ export function initGpsJamming(viewer) {
             rectangle: {
                 coordinates: Cesium.Rectangle.fromDegrees(zone.rect[0], zone.rect[1], zone.rect[2], zone.rect[3]),
                 material: zone.type === 'high' ? highMaterial : medMaterial,
-                height: 50, // Slightly above ground
-                extrudedHeight: 20000, // Volume block for tactical look
-                outline: true,
-                outlineColor: zone.type === 'high' ? Cesium.Color.RED : Cesium.Color.ORANGE
+                height: 0,
+                extrudedHeight: 20000,
+                outline: false
             },
             description: `Tactical Assessment: ${zone.type === 'high' ? 'High' : 'Medium'} probability of GNSS spoofing or jamming.`
         });

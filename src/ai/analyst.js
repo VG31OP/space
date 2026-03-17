@@ -47,6 +47,7 @@ async function sendAnalystQuery() {
       }),
     });
 
+    if (!res.ok) throw new Error(`HTTP Error ${res.status}`);
     const data = await res.json();
     const reply = data.choices?.[0]?.message?.content || 'No response';
     removeThinking();

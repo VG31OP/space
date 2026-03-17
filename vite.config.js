@@ -1,7 +1,9 @@
 import path from "node:path";
 import { defineConfig } from "vite";
+import cesium from 'vite-plugin-cesium';
 
 export default defineConfig({
+  plugins: [cesium()],
   resolve: {
     alias: {
       "@zip.js/zip.js/lib/zip-no-worker.js": path.resolve(
@@ -13,16 +15,13 @@ export default defineConfig({
   server: {
     port: 3001,
     proxy: {
-      "/api/opensky": {
-        target: "https://opensky-network.org",
+      "/api": {
+        target: "http://localhost:5000",
         changeOrigin: true,
-        secure: false,
-        rewrite: (path) => path.replace(/^\/api\/opensky/, ""),
       },
-      "/api/adsbx": {
-        target: "https://adsbexchange.com",
+      "/map": {
+        target: "http://localhost:5000",
         changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/api\/adsbx/, "/api/aircraft/v2"),
       },
       "/api/celestrak": {
         target: "https://celestrak.org",
@@ -33,6 +32,7 @@ export default defineConfig({
       "/api/news": {
         target: "https://newsapi.org",
         changeOrigin: true,
+        secure: false,
         rewrite: (path) => path.replace(/^\/api\/news/, ""),
       },
       "/api/bbc": {
@@ -56,16 +56,19 @@ export default defineConfig({
       "/api/firms": {
         target: "https://firms.modaps.eosdis.nasa.gov",
         changeOrigin: true,
+        secure: false,
         rewrite: (path) => path.replace(/^\/api\/firms/, ""),
       },
       "/api/eonet": {
         target: "https://eonet.gsfc.nasa.gov",
         changeOrigin: true,
+        secure: false,
         rewrite: (path) => path.replace(/^\/api\/eonet/, "/api/v3"),
       },
       "/api/usgs": {
         target: "https://earthquake.usgs.gov",
         changeOrigin: true,
+        secure: false,
         rewrite: (path) => path.replace(/^\/api\/usgs/, "/earthquakes/feed/v1.0/summary"),
       },
     },

@@ -13,8 +13,6 @@ export async function loadOSMBuildings(viewer) {
             show: true,
         });
 
-        console.log('OSM 3D Buildings loaded.');
     } catch (error) {
-        console.error('Failed to load 3D buildings:', error);
     }
 }

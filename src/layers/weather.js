@@ -1,4 +1,5 @@
 import * as Cesium from 'cesium';
+import { safeFetch } from '../utils/safeFetch.js';
 
 // Open-Meteo free API — no key required
 const WEATHER_GRID = [
@@ -31,11 +32,14 @@ export async function initWeather(viewer) {
 
     const results = await Promise.allSettled(
         WEATHER_GRID.map(async (loc) => {
-            const res = await fetch(OPENMETEO_URL(loc.lat, loc.lng));
-            const json = await res.json();
-            return { ...loc, weather: json.current_weather };
+            const data = await safeFetch(OPENMETEO_URL(loc.lat, loc.lng));
+            if (!data) throw new Error('Failed to fetch weather');
+            return { ...loc, weather: data.current_weather };
         })
     );
+    
+    // Check if empty
+    if (!results || results.length === 0) return;
 
     results.forEach(r => {
         if (r.status !== 'fulfilled') return;
@@ -75,6 +79,4 @@ export async function initWeather(viewer) {
     viewer.scene.postRender.addEventListener(() => {
         weatherSource.entities.values.forEach(ent => { ent.show = window.layerToggles.wea; });
     });
-
-    console.log('Weather layer loaded.');
 }

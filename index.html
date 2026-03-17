@@ -25,21 +25,18 @@
       integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
       crossorigin=""
     />
-    <script
-      src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
-      integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
-      crossorigin=""
-    ></script>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='45' fill='%23060a08' stroke='%2300ff88' stroke-width='3'/><text y='65' x='50' text-anchor='middle' font-size='50' fill='%2300ff88'>W</text></svg>">
   </head>
   <body>
-    <canvas id="starfield" style="
-      position: fixed;
-      top: 0; left: 0;
-      width: 100%; height: 100%;
-      z-index: 0;
-      pointer-events: none;
-      background: #000;
-    "></canvas>
+    <div id="loadingScreen" style="position:fixed;inset:0;z-index:9999;background:#060a08;display:flex;flex-direction:column;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;">
+      <div style="font-family:'Orbitron',monospace;font-size:28px;font-weight:900;color:#fff;letter-spacing:0.1em;margin-bottom:8px;">WORLD<span style="color:#00ff88;">|</span>VIEW</div>
+      <div style="font-size:11px;color:#445566;letter-spacing:0.2em;margin-bottom:40px;">GEOSPATIAL INTELLIGENCE PLATFORM</div>
+      <div style="width:200px;height:2px;background:#0d2018;border-radius:2px;overflow:hidden;margin-bottom:16px;">
+        <div id="loadingBar" style="height:100%;width:0%;background:#00ff88;transition:width 0.3s;box-shadow:0 0 8px #00ff88;"></div>
+      </div>
+      <div id="loadingStatus" style="font-size:10px;color:#334455;letter-spacing:0.15em;">INITIALIZING SYSTEMS...</div>
+    </div>
+    <canvas id="starfield" style="position:fixed;top:0;left:0;width:100%;height:100%;z-index:0;pointer-events:none;"></canvas>
     <div id="app">
       <div id="cesiumContainer"></div>
       <div id="visualOverlay" class="visual-overlay"></div>
@@ -55,22 +52,22 @@
           <div class="logo-badge">OSINT</div>
         </div>
         <div class="topbar-center">
-          <nav class="mode-selector" id="modeButtons">
-            <button class="mode-pill active" data-mode="normal">
-              <span class="mode-icon">◉</span>
-              <span class="mode-label">NORMAL</span>
+          <nav class="mode-selector" id="modeButtons" style="display:flex;flex-direction:row;gap:4px;background:rgba(0,0,0,0.5);border:1px solid #0d2018;border-radius:8px;padding:4px;">
+            <button class="mode-pill active" data-mode="normal" style="display:flex;align-items:center;justify-content:center;gap:6px;padding:6px 12px;border-radius:5px;border:1px solid rgba(0,255,136,0.3);background:rgba(0,255,136,0.1);cursor:pointer;font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:700;letter-spacing:0.1em;">
+              <span style="color:#00ff88;">O</span>
+              <span style="color:#00ff88;">NORMAL</span>
             </button>
-            <button class="mode-pill" data-mode="thermal">
-              <span class="mode-icon" style="color:#ff6600">▓</span>
-              <span class="mode-label">THERMAL</span>
+            <button class="mode-pill" data-mode="thermal" style="display:flex;align-items:center;justify-content:center;gap:6px;padding:6px 12px;border-radius:5px;border:1px solid transparent;background:transparent;cursor:pointer;font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:700;letter-spacing:0.1em;">
+              <span style="color:#ff7a1a;">[]</span>
+              <span style="color:#7b8f9f;">THERMAL</span>
             </button>
-            <button class="mode-pill" data-mode="nvg">
-              <span class="mode-icon" style="color:#00ff44">◈</span>
-              <span class="mode-label">NVG</span>
+            <button class="mode-pill" data-mode="nvg" style="display:flex;align-items:center;justify-content:center;gap:6px;padding:6px 12px;border-radius:5px;border:1px solid transparent;background:transparent;cursor:pointer;font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:700;letter-spacing:0.1em;">
+              <span style="color:#00ff44;">&lt;&gt;</span>
+              <span style="color:#7b8f9f;">NVG</span>
             </button>
-            <button class="mode-pill" data-mode="crt">
-              <span class="mode-icon" style="color:#aaddff">▤</span>
-              <span class="mode-label">CRT</span>
+            <button class="mode-pill" data-mode="crt" style="display:flex;align-items:center;justify-content:center;gap:6px;padding:6px 12px;border-radius:5px;border:1px solid transparent;background:transparent;cursor:pointer;font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:700;letter-spacing:0.1em;">
+              <span style="color:#66bbff;">#</span>
+              <span style="color:#7b8f9f;">CRT</span>
             </button>
           </nav>
         </div>
@@ -78,6 +75,10 @@
           <div class="status-indicator status-pill" id="statusPill">
             <span class="status-dot nominal" id="statusDot"></span>
             <span class="status-text" id="statusText">NOMINAL</span>
+          </div>
+          <div class="data-freshness" id="dataFreshness" title="Waiting for first data payload">
+            <span class="freshness-dot red" id="dataFreshnessDot"></span>
+            <span class="freshness-text" id="dataFreshnessText">Loading...</span>
           </div>
           <div class="divider-v"></div>
           <div class="utc-clock" id="utcClock">00:00:00 UTC</div>
@@ -99,21 +100,21 @@
             <span class="layer-count" id="badge-comm">0</span>
           </label>
           <label class="layer-row" data-layer="military">
-            <input class="layer-input" type="checkbox" id="layer-mil" checked />
+            <input class="layer-input" type="checkbox" id="layer-mil" />
             <span class="layer-toggle"><span class="toggle-track"><span class="toggle-thumb"></span></span></span>
             <span class="layer-icon military-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M22 13.2 14.9 12 12 4l-2.9 8L2 13.2l6 2.2v3.1L6 20.5V22l6-1.7 6 1.7v-1.5L16 18.5v-3.1z"/></svg></span>
             <span class="layer-label">Military</span>
             <span class="layer-count" id="badge-mil">0</span>
           </label>
           <label class="layer-row" data-layer="helicopter">
-            <input class="layer-input" type="checkbox" id="layer-heli" checked />
+            <input class="layer-input" type="checkbox" id="layer-heli" />
             <span class="layer-toggle"><span class="toggle-track"><span class="toggle-thumb"></span></span></span>
             <span class="layer-icon helicopter-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8h18"/><path d="M12 3v5"/><path d="M6 12h7a3 3 0 0 1 0 6H9"/><path d="M5 18h4"/><path d="M15 12h4l2 2"/></svg></span>
             <span class="layer-label">Helicopter</span>
             <span class="layer-count" id="badge-heli">0</span>
           </label>
           <label class="layer-row" data-layer="private">
-            <input class="layer-input" type="checkbox" id="layer-priv" checked />
+            <input class="layer-input" type="checkbox" id="layer-priv" />
             <span class="layer-toggle"><span class="toggle-track"><span class="toggle-thumb"></span></span></span>
             <span class="layer-icon private-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="currentColor"><path d="m20 14-6.7-2.4L11 4.5a1 1 0 0 0-2 0v5.4L3 12v1.6l6-.8v4L7.4 18v1.5l2.6-.7 2.6.7V18L11 16.8v-4.2l9 1.4z"/></svg></span>
             <span class="layer-label">Private Jets</span>
@@ -122,7 +123,7 @@
 
           <div class="layer-section-header">Space</div>
           <label class="layer-row" data-layer="satellites">
-            <input class="layer-input" type="checkbox" id="layer-sats" checked />
+            <input class="layer-input" type="checkbox" id="layer-sats" />
             <span class="layer-toggle"><span class="toggle-track"><span class="toggle-thumb"></span></span></span>
             <span class="layer-icon sats-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M7 7 4 4"/><path d="m17 17 3 3"/><rect x="9" y="9" width="6" height="6" rx="1" fill="currentColor" stroke="none"/><path d="M14 10 9 15"/><path d="m15.5 5.5 3 3"/><path d="m5.5 15.5 3 3"/><path d="M12 2v4"/><path d="M22 12h-4"/><path d="M12 22v-4"/><path d="M2 12h4"/></svg></span>
             <span class="layer-label">Active Sats</span>
@@ -136,14 +137,14 @@
             <span class="layer-count" id="badge-iss">0</span>
           </label>
           <label class="layer-row" data-layer="starlink">
-            <input class="layer-input" type="checkbox" id="layer-star" checked />
+            <input class="layer-input" type="checkbox" id="layer-star" />
             <span class="layer-toggle"><span class="toggle-track"><span class="toggle-thumb"></span></span></span>
             <span class="layer-icon starlink-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="currentColor"><circle cx="6" cy="7" r="1.6"/><circle cx="12" cy="5" r="1.6"/><circle cx="18" cy="8" r="1.6"/><circle cx="9" cy="14" r="1.6"/><circle cx="15" cy="16" r="1.6"/><circle cx="6" cy="18" r="1.6"/><path d="M6 7l6-2m0 0 6 3M12 5l-3 9m9-6-3 8M9 14l6 2m-9 2 3-4" fill="none" stroke="currentColor" stroke-width="1.2"/></svg></span>
             <span class="layer-label">Starlink</span>
             <span class="layer-count" id="badge-star">0</span>
           </label>
           <label class="layer-row" data-layer="debris">
-            <input class="layer-input" type="checkbox" id="layer-deb" checked />
+            <input class="layer-input" type="checkbox" id="layer-deb" />
             <span class="layer-toggle"><span class="toggle-track"><span class="toggle-thumb"></span></span></span>
             <span class="layer-icon debris-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="currentColor"><path d="m12 3 1.4 5.2L19 6l-3.8 3.8L21 12l-5.8 2.2L19 18l-5.6-2.2L12 21l-1.4-5.2L5 18l3.8-3.8L3 12l5.8-2.2L5 6l5.6 2.2z"/></svg></span>
             <span class="layer-label">Debris</span>
@@ -196,7 +197,7 @@
             <span class="layer-count" id="badge-wea">0</span>
           </label>
           <label class="layer-row" data-layer="jamming">
-            <input class="layer-input" type="checkbox" id="layer-jam" checked />
+            <input class="layer-input" type="checkbox" id="layer-jam" />
             <span class="layer-toggle"><span class="toggle-track"><span class="toggle-thumb"></span></span></span>
             <span class="layer-icon jam-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4 20 20"/><path d="M8.5 8.5a5 5 0 0 1 7 7"/><path d="M5.2 5.2a10 10 0 0 1 13.6 13.6"/><path d="M12 12v8"/><path d="M9 20h6"/></svg></span>
             <span class="layer-label">GPS Jamming</span>
@@ -207,67 +208,27 @@
 
       <aside class="right-panel" id="rightPanel">
         <div class="tab-bar">
-          <button class="tab-button ai-tab-btn active" data-tab="news">NEWS</button>
-          <button class="tab-button ai-tab-btn" data-tab="analyst">ANALYST</button>
-          <button class="tab-button ai-tab-btn" data-tab="smartview">SMART VIEW</button>
+          <div style="display:flex;gap:2px;padding:8px 12px;border-bottom:1px solid rgba(0,255,136,0.1);width:100%;">
+            <button class="ai-tab-btn active" data-tab="news" style="flex:1;padding:6px 8px;background:rgba(0,255,136,0.1);border:1px solid rgba(0,255,136,0.3);border-radius:5px;color:#00ff88;font-family:monospace;font-size:9px;font-weight:700;letter-spacing:0.12em;cursor:pointer;">NEWS</button>
+            <button class="ai-tab-btn" data-tab="analyst" style="flex:1;padding:6px 8px;background:transparent;border:1px solid rgba(0,255,136,0.1);border-radius:5px;color:#445566;font-family:monospace;font-size:9px;font-weight:700;letter-spacing:0.12em;cursor:pointer;">ANALYST</button>
+            <button class="ai-tab-btn" data-tab="smartview" style="flex:1;padding:6px 8px;background:transparent;border:1px solid rgba(0,255,136,0.1);border-radius:5px;color:#445566;font-family:monospace;font-size:9px;font-weight:700;letter-spacing:0.12em;cursor:pointer;">SMART VIEW</button>
+          </div>
         </div>
-        <section class="tab-panel ai-tab-content active" id="tab-news">
+        <div id="tab-news" class="ai-tab-content" style="display:flex;flex-direction:column;">
           <div class="news-header">
             <span class="breaking-chip news-ticker" id="breakingChip">LIVE FEED</span>
             <span id="newsStatus">Updated from proxied feeds</span>
           </div>
           <div class="news-list" id="newsList"></div>
-        </section>
-        <section class="tab-panel ai-tab-content" id="tab-analyst" style="display: none; flex-direction: column; height: 100%;">
-          <div id="analystMessages" style="
-            flex: 1;
-            overflow-y: auto;
-            padding: 12px;
-            display: flex;
-            flex-direction: column;
-            gap: 10px;
-          "></div>
-          <div style="
-            padding: 10px 12px;
-            border-top: 1px solid rgba(0,255,136,0.1);
-            display: flex;
-            gap: 8px;
-          ">
-            <input id="analystInput" type="text"
-              placeholder="Ask the analyst..."
-              style="
-                flex: 1;
-                background: rgba(0,255,136,0.05);
-                border: 1px solid rgba(0,255,136,0.2);
-                border-radius: 6px;
-                padding: 8px 12px;
-                color: #aabbcc;
-                font-family: 'JetBrains Mono', monospace;
-                font-size: 11px;
-                outline: none;
-              "
-            />
-            <button id="analystSend" style="
-              padding: 8px 14px;
-              background: rgba(0,255,136,0.1);
-              border: 1px solid rgba(0,255,136,0.3);
-              border-radius: 6px;
-              color: #00ff88;
-              font-family: 'JetBrains Mono', monospace;
-              font-size: 10px;
-              font-weight: 700;
-              cursor: pointer;
-              letter-spacing: 0.1em;
-            ">SEND</button>
+        </div>
+        <div id="tab-analyst" class="ai-tab-content" style="display:none;flex-direction:column;">
+          <div id="analystMsgs" style="flex:1;overflow-y:auto;padding:12px;display:flex;flex-direction:column;gap:8px;"></div>
+          <div style="padding:12px;border-top:1px solid rgba(0,255,136,0.12);display:flex;gap:8px;">
+            <input id="analystInput" type="text" placeholder="Ask the analyst" style="flex:1;background:rgba(4,12,10,0.94);border:1px solid rgba(0,255,136,0.28);border-radius:6px;padding:9px 12px;color:#d7e4ec;font-family:'JetBrains Mono',monospace;font-size:11px;outline:none;" />
+            <button id="analystSend" type="button" style="padding:9px 14px;background:transparent;border:1px solid rgba(0,255,136,0.35);border-radius:6px;color:#00ff88;font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:700;letter-spacing:0.1em;">SEND</button>
           </div>
-        </section>
-        <section class="tab-panel ai-tab-content" id="tab-smartview" style="
-          display: none;
-          flex-direction: column;
-          gap: 10px;
-          padding: 12px;
-          overflow-y: auto;
-        "></section>
+        </div>
+        <div id="tab-smartview" class="ai-tab-content" style="display:none;flex-direction:column;"></div>
       </aside>
 
       <div class="alert-stack" id="alertStack"></div>
@@ -282,7 +243,7 @@
       </div>
 
       <div class="minimap-shell">
-        <div id="miniMap"></div>
+        <div id="minimap"></div>
       </div>
 
       <footer class="bottombar">

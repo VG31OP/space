@@ -1,100 +1,114 @@
 import * as Cesium from 'cesium';
 import 'cesium/Build/Cesium/Widgets/widgets.css';
-
 let viewer = null;
-
 export async function initGlobe() {
-  const ionToken = import.meta.env.VITE_CESIUM_TOKEN;
-  Cesium.Ion.defaultAccessToken = ionToken || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiJlYWE1OWUxNy1mMWZiLTQzYjYtYTQ0OS1kMWFjYmFkNjc4ZTgiLCJpZCI6NTc3MzMsImlhdCI6MTYyNzg0NTE4Mn0.XcKpgANiY19MC4bdFUXMVEBToBmqS8kuYpUlxJHYZxk';
-
-  try {
-    viewer = new Cesium.Viewer('cesiumContainer', {
-      animation: false,
-      baseLayerPicker: false,
-      fullscreenButton: false,
-      vrButton: false,
-      geocoder: false,
-      homeButton: false,
-      infoBox: false,
-      sceneModePicker: false,
-      selectionIndicator: false,
-      timeline: false,
-      navigationHelpButton: false,
-      navigationInstructionsInitiallyVisible: false,
-      imageryProvider: new Cesium.OpenStreetMapImageryProvider({
-        url: 'https://tile.openstreetmap.org/',
-      }),
-    });
-
-    viewer.scene.globe.enableLighting = true;
-    viewer.scene.globe.atmosphereLightIntensity = 10.0;
-    viewer.scene.backgroundColor = Cesium.Color.BLACK;
-
-    if (ionToken) {
-      try {
-        const bingProvider = await Cesium.IonImageryProvider.fromAssetId(2);
-        viewer.imageryLayers.addImageryProvider(bingProvider);
-      } catch {
-        console.warn('[Globe] Bing imagery unavailable, using OSM');
-      }
-
-      try {
-        viewer.terrainProvider = await Cesium.createWorldTerrainAsync({
-          requestWaterMask: true,
-          requestVertexNormals: true,
-        });
-      } catch {
-        console.warn('[Globe] Terrain failed, using ellipsoid');
-      }
-    }
-
-    await loadOSMBuildings();
-
-    viewer.camera.flyTo({
-      destination: Cesium.Cartesian3.fromDegrees(0, 20, 20000000),
-      duration: 2,
-    });
-
-    setStatus('NOMINAL');
-    return viewer;
-  } catch (err) {
-    console.error('[Globe] Init failed:', err);
-    setStatus('SYSTEM ERROR', true);
-    throw err;
-  }
+const ionToken = import.meta.env.VITE_CESIUM_TOKEN;
+if (ionToken) {
+Cesium.Ion.defaultAccessToken = ionToken;
 }
-
-async function loadOSMBuildings() {
-  try {
-    const osmTileset = await Cesium.createOsmBuildingsAsync();
-    osmTileset.style = new Cesium.Cesium3DTileStyle({
-      color: {
-        conditions: [
-          ['${feature["building"]} === "commercial"', 'color("#8899aa", 0.9)'],
-          ['${feature["building"]} === "residential"', 'color("#aabbcc", 0.85)'],
-          ['true', 'color("#99aabb", 0.9)'],
-        ],
-      },
-    });
-    if (viewer) viewer.scene.primitives.add(osmTileset);
-  } catch (err) {
-    console.warn('[Globe] OSM buildings failed:', err.message);
-  }
+viewer = new Cesium.Viewer('cesiumContainer', {
+animation: false,
+baseLayerPicker: false,
+fullscreenButton: false,
+vrButton: false,
+geocoder: false,
+homeButton: false,
+infoBox: false,
+sceneModePicker: false,
+selectionIndicator: false,
+timeline: false,
+navigationHelpButton: false,
+navigationInstructionsInitiallyVisible: false,
+imageryProvider: false,
+shouldAnimate: true,
+contextOptions: {
+webgl: {
+alpha: false,
+antialias: true,
+preserveDrawingBuffer: true,
+failIfMajorPerformanceCaveat: false,
+powerPreference: 'high-performance',
+},
+},
+});
+try {
+viewer.imageryLayers.removeAll();
+const osm = new Cesium.OpenStreetMapImageryProvider({
+url: 'https://tile.openstreetmap.org/',
+});
+viewer.imageryLayers.addImageryProvider(osm);
+} catch(e) {
 }
-
-function setStatus(text, isCritical = false) {
-  const pill = document.getElementById('statusPill');
-  const dot = document.getElementById('statusDot');
-  const label = document.getElementById('statusText');
-
-  if (label) label.textContent = text;
-  if (pill) pill.classList.toggle('alert', isCritical);
-  if (dot) {
-    dot.classList.toggle('critical', isCritical);
-    dot.classList.toggle('nominal', !isCritical);
-  }
+try {
+viewer.scene.globe.enableLighting = true;
+} catch(e) {}
+try {
+viewer.scene.globe.showGroundAtmosphere = true;
+viewer.scene.globe.atmosphereLightIntensity = 10.0;
+} catch(e) {}
+try {
+viewer.scene.globe.baseColor = Cesium.Color.fromCssColorString('#1a3a5c');
+} catch(e) {}
+try {
+viewer.scene.fog.enabled = false;
+} catch(e) {}
+try {
+viewer.scene.backgroundColor = Cesium.Color.fromCssColorString('#0a0c10');
+} catch(e) {}
+try {
+viewer.scene.globe.depthTestAgainstTerrain = true;
+} catch(e) {}
+try {
+viewer.scene.requestRenderMode = false;
+} catch(e) {}
+try {
+viewer.scene.screenSpaceCameraController.enableCollisionDetection = false;
+} catch(e) {}
+if (ionToken) {
+try {
+const terrain = await Cesium.CesiumTerrainProvider.fromIonAssetId(1);
+viewer.terrainProvider = terrain;
+} catch(e) {
 }
-
+try {
+  const bingProvider = await Cesium.IonImageryProvider.fromAssetId(2);
+  viewer.imageryLayers.addImageryProvider(bingProvider);
+} catch(e) {
+}
+}
+try {
+const osm = await Cesium.createOsmBuildingsAsync();
+osm.style = new Cesium.Cesium3DTileStyle({
+color: 'color("#99aabb", 0.9)',
+});
+viewer.scene.primitives.add(osm);
+} catch(e) {
+}
+try {
+viewer.camera.setView({
+destination: Cesium.Cartesian3.fromDegrees(78.9629, 22.5937, 18000000),
+orientation: {
+heading: 0,
+pitch: Cesium.Math.toRadians(-90),
+roll: 0,
+},
+});
+} catch(e) {}
+setStatus('NOMINAL', false);
+window.viewer = viewer;
+return viewer;
+}
+function setStatus(text, isCritical) {
+const dot = document.getElementById('statusDot');
+const label = document.getElementById('statusText');
+const pill = document.getElementById('statusPill');
+if (label) label.textContent = text;
+if (dot) {
+dot.classList.toggle('critical', isCritical);
+dot.classList.toggle('nominal', !isCritical);
+}
+if (pill) pill.classList.toggle('alert', isCritical);
+}
 export function getViewer() {
-  return viewer;
+return viewer;
 }

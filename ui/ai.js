@@ -1,3 +1,31 @@
+function initTabs() {
+  document.querySelectorAll('.ai-tab-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.ai-tab-btn').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.ai-tab-content').forEach(c => c.style.display = 'none');
+      btn.classList.add('active');
+      const panel = document.getElementById('tab-' + btn.dataset.tab);
+      if (panel) panel.style.display = 'flex';
+    });
+  });
+}
+initTabs();
+
+document.addEventListener('DOMContentLoaded', () => {
+const analystPanel = document.getElementById('tab-analyst');
+if(analystPanel) analystPanel.innerHTML = `<div style="flex:1;overflow-y:auto;padding:12px;display:flex;flex-direction:column;gap:8px;" id="analystMsgs"></div>
+<div style="padding:10px 12px;border-top:1px solid rgba(0,255,136,0.1);display:flex;gap:8px;">
+  <input id="analystInput" type="text" placeholder="Ask the analyst..." style="flex:1;background:rgba(0,255,136,0.05);border:1px solid rgba(0,255,136,0.2);border-radius:6px;padding:8px 10px;color:#aabbcc;font-family:monospace;font-size:11px;outline:none;" />
+  <button id="analystSend" style="padding:8px 12px;background:rgba(0,255,136,0.1);border:1px solid rgba(0,255,136,0.3);border-radius:6px;color:#00ff88;font-family:monospace;font-size:10px;font-weight:700;cursor:pointer;">SEND</button>
+</div>`;
+});
+
+function addMsg(role,text){const d=document.createElement('div');d.style.cssText='padding:8px 10px;border-radius:6px;font-family:monospace;font-size:11px;line-height:1.5;max-width:90%;'+(role==='user'?'align-self:flex-end;background:rgba(0,255,136,0.08);border:1px solid rgba(0,255,136,0.2);color:#aabbcc;':role==='err'?'background:rgba(255,50,50,0.08);border:1px solid rgba(255,50,50,0.2);color:#ff6666;':'align-self:flex-start;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);color:#8899aa;');d.textContent=text;const msgs=document.getElementById('analystMsgs');msgs.appendChild(d);msgs.scrollTop=msgs.scrollHeight;return d;}
+
+async function sendAnalyst(){const inp=document.getElementById('analystInput');const q=inp.value.trim();if(!q)return;inp.value='';addMsg('user',q);const t=addMsg('ai','Analyzing...');try{const r=await fetch('https://api.openai.com/v1/chat/completions',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+window.__ENV.OPENAI_KEY},body:JSON.stringify({model:'gpt-4o-mini',max_tokens:250,messages:[{role:'system',content:'You are a geospatial OSINT analyst. Be concise and use intelligence terminology.'},{role:'user',content:q}]})});const data=await r.json();t.textContent=data.choices?.[0]?.message?.content||'No response.';}catch(e){t.style.color='#ff6666';t.textContent='Connection failed.';}}
+
+document.addEventListener('DOMContentLoaded',()=>{const btn=document.getElementById('analystSend');const inp=document.getElementById('analystInput');if(btn)btn.onclick=sendAnalyst;if(inp)inp.onkeydown=e=>{if(e.key==='Enter')sendAnalyst();};});
+
 const FALLBACK_NEWS = [
   { title: "Naval task groups reposition near the Eastern Mediterranean", source: "Regional Watch", publishedAt: new Date(Date.now() - 15 * 60000).toISOString(), url: "#" },
   { title: "Launch cadence increases as new Starlink tranche enters orbit", source: "Orbital Monitor", publishedAt: new Date(Date.now() - 43 * 60000).toISOString(), url: "#" },
@@ -124,24 +152,34 @@ function fallbackSmartViews(app) {
 }
 
 export function createAiPanel(app) {
-  const tabButtons = Array.from(document.querySelectorAll(".tab-button"));
-  const tabPanels = Array.from(document.querySelectorAll(".tab-panel"));
+  const tabButtons = Array.from(document.querySelectorAll(".ai-tab-btn"));
+  const tabPanels = Array.from(document.querySelectorAll(".ai-tab-content"));
   const newsList = document.getElementById("newsList");
   const newsStatus = document.getElementById("newsStatus");
   const breakingChip = document.getElementById("breakingChip");
-  const chatHistory = document.getElementById("chatHistory");
-  const chatForm = document.getElementById("chatForm");
-  const chatInput = document.getElementById("chatInput");
-  const smartList = document.getElementById("smartList");
+  const chatHistory = document.getElementById("analystMessages");
+  const analystInput = document.getElementById("analystInput");
+  const analystSend = document.getElementById("analystSend");
+  const smartList = document.getElementById("tab-smartview");
   const suggestionsCache = [];
   const conversation = [];
 
+  // Tab switching — use display style, not class toggling
   tabButtons.forEach((button) => {
     button.addEventListener("click", () => {
-      tabButtons.forEach((item) => item.classList.toggle("active", item === button));
-      tabPanels.forEach((panel) => panel.classList.toggle("active", panel.id === `tab-${button.dataset.tab}`));
+      tabButtons.forEach((b) => b.classList.remove("active"));
+      tabPanels.forEach((p) => p.style.display = "none");
+      button.classList.add("active");
+      const target = button.dataset.tab;
+      const panel = document.getElementById(`tab-${target}`);
+      if (panel) panel.style.display = "flex";
     });
   });
+
+  // Show news tab by default
+  document.getElementById('tab-news').style.display = 'flex';
+  document.getElementById('tab-analyst').style.display = 'none';
+  document.getElementById('tab-smartview').style.display = 'none';
 
   function renderNews(items) {
     newsList.innerHTML = "";
@@ -231,11 +269,10 @@ export function createAiPanel(app) {
     return message;
   }
 
-  chatForm.addEventListener("submit", async (event) => {
-    event.preventDefault();
-    const text = chatInput.value.trim();
+  async function handleAnalystSend() {
+    const text = analystInput.value.trim();
     if (!text) return;
-    chatInput.value = "";
+    analystInput.value = "";
     addMessage("user", text);
     const typing = addMessage("assistant", "Analyzing", "typing");
     conversation.push({ role: "user", content: text });
@@ -262,6 +299,11 @@ export function createAiPanel(app) {
       else app.reportAPIStatus("OpenAI (Analyst)", "ERROR");
       app.notify("Analyst stream degraded. Local context answer returned.", "warning");
     }
+  }
+
+  analystSend.addEventListener("click", handleAnalystSend);
+  analystInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") handleAnalystSend();
   });
 
   function renderSmartCards(items) {
@@ -312,4 +354,8 @@ export function createAiPanel(app) {
 
   return {};
 }
+
+async function refreshSmartView(){const el=document.getElementById('tab-smartview');if(!el)return;el.innerHTML='<div style="padding:16px;font-family:monospace;font-size:11px;color:#445566;">FETCHING INTEL...</div>';let sugs=[];try{const r=await fetch('https://api.openai.com/v1/chat/completions',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+window.__ENV.OPENAI_KEY},body:JSON.stringify({model:'gpt-4o-mini',max_tokens:350,messages:[{role:'user',content:'Suggest 3 interesting geospatial viewpoints right now. Reply ONLY with a JSON array, no markdown, no explanation: [{"title":"...","desc":"...","lat":0,"lng":0,"alt":500000}]'}]})});const d=await r.json();sugs=JSON.parse((d.choices?.[0]?.message?.content||'[]').replace(/```json|```/g,'').trim());}catch(_){sugs=[{title:'Strait of Hormuz',desc:'Key maritime chokepoint with high naval activity',lat:26.5,lng:56.3,alt:400000},{title:'ISS Groundtrack',desc:'Current ISS orbital pass over hemisphere',lat:28.6,lng:77.2,alt:800000},{title:'North Atlantic Corridor',desc:'Busiest transatlantic flight path',lat:52,lng:-30,alt:2000000}];}el.innerHTML='';sugs.forEach(s=>{const c=document.createElement('div');c.style.cssText='background:rgba(0,255,136,0.04);border:1px solid rgba(0,255,136,0.15);border-radius:8px;padding:12px;margin:8px;';c.innerHTML='<div style="font-family:monospace;font-size:10px;color:#00ff88;font-weight:700;letter-spacing:0.1em;margin-bottom:5px;">'+s.title+'</div><div style="font-family:monospace;font-size:11px;color:#556677;line-height:1.5;margin-bottom:10px;">'+s.desc+'</div><button style="padding:4px 10px;background:rgba(0,255,136,0.1);border:1px solid rgba(0,255,136,0.25);border-radius:4px;color:#00ff88;font-size:9px;font-family:monospace;font-weight:700;cursor:pointer;">FLY THERE</button>';c.querySelector('button').onclick=()=>{if(window.viewer)window.viewer.camera.flyTo({destination:Cesium.Cartesian3.fromDegrees(s.lng,s.lat,s.alt),duration:2});};el.appendChild(c);});}
+refreshSmartView();
+setInterval(refreshSmartView,60000);
 

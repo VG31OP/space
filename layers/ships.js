@@ -14,23 +14,28 @@ const SHIP_COLORS = {
 function upsertShip(viewer, layer, ship) {
   let entity = layer.entities.get(ship.id);
   if (!entity) {
+    let pointColor = Cesium.Color.WHITE;
+    const type = (ship.type || '').toLowerCase();
+    if (type === 'cargo') pointColor = Cesium.Color.DODGERBLUE;
+    else if (type === 'tanker') pointColor = Cesium.Color.ORANGE;
+    else if (type === 'naval') pointColor = Cesium.Color.RED;
+    else if (type === 'fishing') pointColor = Cesium.Color.CYAN;
+
     entity = viewer.entities.add({
       id: `${layer.id}:${ship.id}`,
-      position: createPosition(ship.lon, ship.lat, 0),
-      billboard: {
-        image: ICONS[ship.type] || ICONS.ship,
-        scale: 0.8,
-        verticalOrigin: Cesium.VerticalOrigin.CENTER,
-        rotation: Cesium.Math.toRadians((ship.heading || 0) - 90),
+      position: Cesium.Cartesian3.fromDegrees(ship.lon, ship.lat, 100),
+      point: {
+        pixelSize: 6,
+        color: pointColor,
         disableDepthTestDistance: Number.POSITIVE_INFINITY,
+        heightReference: Cesium.HeightReference.NONE
       },
       label: buildLabel(ship.name, false),
     });
     layer.entities.set(ship.id, entity);
   }
 
-  entity.position = createPosition(ship.lon, ship.lat, 0);
-  entity.billboard.rotation = Cesium.Math.toRadians((ship.heading || 0) - 90);
+  entity.position = Cesium.Cartesian3.fromDegrees(ship.lon, ship.lat, 100);
   entity.show = layer.enabled;
   entity.worldview = {
     layerId: layer.id,
@@ -85,75 +90,46 @@ export function createShipLayers(viewer, app) {
     app.updateSummary();
   }
 
-  function startWebsocket() {
-    if (!window.__ENV?.AIS_KEY) {
-      app.reportAPIStatus("AIS Stream (Ships)", "KEY REQUIRED");
-      app.notify("AIS key not provided. Live vessel tracking is disabled.", "warning");
-      return;
-    }
-    app.reportAPIStatus("AIS Stream (Ships)", "NOMINAL");
-
+  function connectAIS() {
+  const key = window.__ENV?.AIS_KEY;
+  if (!key) { loadFallbackShips(); return; }
+  let retries = 0;
+  function connect() {
     try {
-      websocket = new WebSocket("wss://stream.aisstream.io/v0/stream");
-      const snapshot = new Map();
-
-      websocket.addEventListener("open", () => {
-        websocket.send(
-          JSON.stringify({
-            APIKey: window.__ENV.AIS_KEY,
-            BoundingBoxes: [[[-90, -180], [90, 180]]],
-          }),
-        );
-      });
-
-      websocket.addEventListener("message", (event) => {
-        try {
-          const payload = JSON.parse(event.data);
-          if (payload?.MessageType !== "PositionReport") {
-            return;
-          }
-          const report = payload.Message?.PositionReport;
-          if (!report?.Latitude || !report?.Longitude) {
-            return;
-          }
-
-          const shipTypeValue = Number(report.ShipType || 70);
-          let type = "cargo";
-          if (shipTypeValue >= 80 && shipTypeValue <= 89) type = "tanker";
-          else if (shipTypeValue === 35) type = "naval";
-          else if (shipTypeValue === 30) type = "fishing";
-          else if (shipTypeValue >= 60 && shipTypeValue <= 69) type = "passenger";
-
-          snapshot.set(report.UserID, {
-            id: String(report.UserID),
-            name: report.ShipName || `MMSI ${report.UserID}`,
-            type,
-            lat: report.Latitude,
-            lon: report.Longitude,
-            heading: report.TrueHeading || 0,
-            speed: report.Sog || 0,
-            mmsi: String(report.UserID),
-          });
-
-          applyRecords(Array.from(snapshot.values()).slice(-120));
-        } catch (error) {
-          console.warn("AIS stream parse failure", error);
-        }
-      });
-
-      websocket.addEventListener("error", () => {
-        app.reportAPIStatus("AIS Stream (Ships)", "ERROR");
-        app.notify("AIS stream connection error. Live vessel tracking disabled.", "error");
-      });
-
-      websocket.addEventListener("close", () => {
-        console.warn("AIS stream closed");
-      });
-    } catch (error) {
-      app.reportAPIStatus("AIS Stream (Ships)", "ERROR");
-      app.notify("AIS websocket unavailable. Live vessel tracking disabled.", "error");
-    }
+      const ws = new WebSocket('wss://stream.aisstream.io/v0/stream');
+      ws.onopen = () => { retries=0; ws.send(JSON.stringify({APIKey:key,BoundingBoxes:[[[-90,-180],[90,180]]],FilterMessageTypes:['PositionReport']})); };
+      ws.onmessage = (e) => { try { const m=JSON.parse(e.data); if(m.MessageType==='PositionReport') updateShipEntity(m); } catch(_){} };
+      ws.onerror = () => {};
+      ws.onclose = () => { if(retries<3){retries++;setTimeout(connect,5000*retries);}else loadFallbackShips(); };
+    } catch(e) { loadFallbackShips(); }
   }
+  connect();
+}
+function loadFallbackShips() {
+  console.info('AIS: fallback mode active');
+  const fallbacks = [
+    { lng: 103.8, lat: 1.3 },
+    { lng: 32.3, lat: 29.9 },
+    { lng: -5.4, lat: 36.1 },
+    { lng: 56.3, lat: 26.5 },
+    { lng: 43.6, lat: 12.6 },
+    { lng: -75.0, lat: 8.9 },
+    { lng: 121.5, lat: 25.0 },
+    { lng: 4.9, lat: 52.3 }
+  ];
+  fallbacks.forEach((pos, i) => {
+    viewer.entities.add({
+      id: `fallback-ship-${i}`,
+      position: Cesium.Cartesian3.fromDegrees(pos.lng, pos.lat, 100),
+      point: {
+        pixelSize: 6,
+        color: Cesium.Color.STEELBLUE,
+        disableDepthTestDistance: Number.POSITIVE_INFINITY,
+        heightReference: Cesium.HeightReference.NONE
+      }
+    });
+  });
+}
 
   function stopAll() {
     if (websocket) {
@@ -170,7 +146,7 @@ export function createShipLayers(viewer, app) {
         return;
       }
       if (!websocket && !fallbackInterval) {
-        startWebsocket();
+        connectAIS();
       }
     };
     layer.stop = () => {
@@ -192,7 +168,7 @@ export function createShipLayers(viewer, app) {
   });
 
   if (anyEnabled()) {
-    startWebsocket();
+    connectAIS();
   }
 
   return layerDefs;

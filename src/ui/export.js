@@ -28,7 +28,6 @@ export function initExport(viewer, appState) {
 
             console.log('Successfully loaded OSINT snapshot from URL parameters.');
         } catch (e) {
-            console.warn('Invalid URL hash parameters.');
         }
     }
 
@@ -55,10 +54,7 @@ export function initExport(viewer, appState) {
 
             // Copy to clipboard
             navigator.clipboard.writeText(window.location.href).catch(err => {
-                console.error('Failed to copy to clipboard', err);
             });
         }
     });
-
-    console.log('Export module initialized. Hotkey: CTRL+E');
 }

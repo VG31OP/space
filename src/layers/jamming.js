@@ -40,10 +40,8 @@ export function initJamming(viewer) {
                 semiMajorAxis: zone.radius,
                 semiMinorAxis: zone.radius * 0.85,
                 material: new Cesium.ColorMaterialProperty(color),
-                outline: true,
-                outlineColor: color.withAlpha(0.8),
-                outlineWidth: 2,
-                height: 5000,
+                outline: false,
+                height: 0,
                 extrudedHeight: 25000
             },
             label: {

@@ -3,7 +3,6 @@ import * as Cesium from 'cesium';
 const AISSTREAM_WS = 'wss://stream.aisstream.io/v0/stream';
 let ws = null;
 const shipCache = new Map();
-let warnedAisUnavailable = false;
 
 const SHIP_TYPES = {
   70: 'cargo', 71: 'cargo', 72: 'cargo', 73: 'cargo', 74: 'cargo',
@@ -14,137 +13,117 @@ const SHIP_TYPES = {
 
 function getShipStyle(type) {
   const styles = {
-    cargo: { color: Cesium.Color.WHITE, size: 8 },
-    tank: { color: Cesium.Color.fromCssColorString('#ffaa00'), size: 9 },
-    naval: { color: Cesium.Color.RED, size: 10 },
-    fish: { color: Cesium.Color.CYAN, size: 6 },
-    other: { color: Cesium.Color.GRAY, size: 6 },
+    cargo: { color: Cesium.Color.DODGERBLUE, size: 5 },
+    tank: { color: Cesium.Color.ORANGE, size: 5 },
+    naval: { color: Cesium.Color.RED, size: 5 },
+    fish: { color: Cesium.Color.CYAN, size: 5 },
+    other: { color: Cesium.Color.GRAY, size: 5 },
   };
   return styles[type] || styles.other;
 }
 
 export function initShips(viewer) {
   const shipSource = new Cesium.CustomDataSource('ships');
+  shipSource.show = true;
   viewer.dataSources.add(shipSource);
 
   window.layerToggles = window.layerToggles || {};
+  window.layerToggles['cargo'] = false;
+  window.layerToggles['tank'] = false;
+  window.layerToggles['naval'] = false;
+  window.layerToggles['fish'] = false;
+
   ['cargo', 'tank', 'naval', 'fish'].forEach((key) => {
     const el = document.getElementById(`layer-${key}`);
-    window.layerToggles[key] = el ? el.checked : false;
     if (el) el.addEventListener('change', (event) => { window.layerToggles[key] = event.target.checked; });
   });
 
-  seedFallbackShips(shipSource);
-
   connectAIS(shipSource);
 
+  let lastShipToggle = '';
   viewer.scene.postRender.addEventListener(() => {
+    const state = JSON.stringify(window.layerToggles);
+    if (state === lastShipToggle) return;
+    lastShipToggle = state;
     const showLabels = viewer.camera.positionCartographic.height < 3000000;
     shipSource.entities.values.forEach((entity) => {
-      const type = entity.properties?.shipType?.getValue
-        ? entity.properties.shipType.getValue()
-        : null;
-      entity.show = window.layerToggles[type] ?? false;
-      if (entity.label) entity.label.show = entity.show && showLabels;
+      const type = entity.properties?.shipType?.getValue ? entity.properties.shipType.getValue() : null;
+      const visible = window.layerToggles[type] ?? true;
+      entity.show = visible;
+      if (entity.label) entity.label.show = visible && showLabels;
     });
   });
 }
 
 function connectAIS(shipSource) {
   const key = window.__ENV?.AIS_KEY;
-  if (!key) {
-    console.warn('AIS key not set, using fallback ship data');
+  if (!key || key === '' || key === 'undefined') {
+    publishShipStatus({
+      loading: false,
+      error: 'AIS API key not configured',
+      isCached: false,
+      status: 'error',
+      timestamp: new Date().toISOString(),
+      source: 'ais',
+    });
     return;
   }
 
-  let retryCount = 0;
-  const MAX_RETRIES = 3;
+  publishShipStatus({ loading: true, error: null, source: 'ais' });
 
-  function connect() {
-    try {
-      ws = new WebSocket(AISSTREAM_WS);
+  try {
+    ws = new WebSocket('wss://stream.aisstream.io/v0/stream');
 
-      ws.addEventListener('open', () => {
-        retryCount = 0;
-        ws.send(JSON.stringify({
-          APIKey: key,
-          BoundingBoxes: [[[-90, -180], [90, 180]]],
-          FilterMessageTypes: ['PositionReport'],
-        }));
+    ws.addEventListener('open', () => {
+      publishShipStatus({
+        loading: false,
+        error: null,
+        isCached: false,
+        status: 'success',
+        timestamp: new Date().toISOString(),
+        source: 'ais',
       });
-
-      ws.addEventListener('message', (evt) => {
-        try {
-          const msg = JSON.parse(evt.data);
-          if (msg.MessageType !== 'PositionReport') return;
-          updateShipEntity(msg, shipSource);
-        } catch {
-          // Skip malformed payloads.
-        }
-      });
-
-      ws.addEventListener('error', (error) => {
-        console.warn('AIS WebSocket error:', error);
-      });
-
-      ws.addEventListener('close', () => {
-        if (retryCount < MAX_RETRIES) {
-          retryCount += 1;
-          console.log(`AIS reconnecting (${retryCount}/${MAX_RETRIES})...`);
-          setTimeout(connect, 5000 * retryCount);
-        } else if (!warnedAisUnavailable) {
-          warnedAisUnavailable = true;
-          console.warn('AIS max retries reached, using fallback');
-        }
-      });
-    } catch (error) {
-      console.warn('AIS connect failed:', error);
-    }
-  }
-
-  connect();
-}
-
-function seedFallbackShips(shipSource) {
-  const fallback = [
-    { name: 'EVER GIVEN', lat: 30.5, lng: 32.3, type: 'cargo', dest: 'ROTTERDAM' },
-    { name: 'PIONEER', lat: 51.5, lng: 1.2, type: 'tank', dest: 'LONDON' },
-    { name: 'USS LINCOLN', lat: 26.3, lng: 56.4, type: 'naval', dest: 'BAHRAIN' },
-    { name: 'ENDEAVOUR', lat: 1.3, lng: 103.8, type: 'cargo', dest: 'SINGAPORE' },
-    { name: 'MING HE', lat: 22.3, lng: 113.9, type: 'cargo', dest: 'HONG KONG' },
-    { name: 'HORIZON', lat: 35.6, lng: 139.7, type: 'tank', dest: 'TOKYO' },
-    { name: 'BLUE FIN', lat: -33.9, lng: 151.2, type: 'fish', dest: 'SYDNEY' },
-    { name: 'ARCTIC STAR', lat: 64.1, lng: -21.9, type: 'cargo', dest: 'REYKJAVIK' },
-    { name: 'USS FORD', lat: 37.4, lng: -76.0, type: 'naval', dest: 'NORFOLK VA' },
-    { name: 'GULF TITAN', lat: 24.5, lng: 54.4, type: 'tank', dest: 'ABU DHABI' },
-  ];
-
-  fallback.forEach((item, index) => {
-    const style = getShipStyle(item.type);
-    const entity = shipSource.entities.add({
-      id: `ship-static-${index}`,
-      name: item.name,
-      position: Cesium.Cartesian3.fromDegrees(item.lng, item.lat, 10),
-      point: { pixelSize: style.size, color: style.color, outlineColor: Cesium.Color.BLACK, outlineWidth: 1 },
-      label: {
-        text: item.name,
-        font: '8pt "JetBrains Mono"',
-        fillColor: style.color,
-        style: Cesium.LabelStyle.FILL_AND_OUTLINE,
-        outlineColor: Cesium.Color.BLACK,
-        outlineWidth: 2,
-        pixelOffset: new Cesium.Cartesian2(0, -16),
-        show: false,
-      },
-      properties: { shipType: item.type, destination: item.dest, velocity: Math.random() * 12 + 2 },
+      ws.send(JSON.stringify({
+        APIKey: key,
+        BoundingBoxes: [[[-90, -180], [90, 180]]],
+        FilterMessageTypes: ['PositionReport'],
+      }));
     });
-    entity.worldview = { kind: 'ship', color: style.color, id: entity.id };
-  });
 
-  ['cargo', 'tank', 'naval', 'fish'].forEach((type) => updateBadge(type, fallback.filter((item) => item.type === type).length));
-  const counter = document.getElementById('hud-count-ships');
-  if (counter) counter.textContent = fallback.length;
-  if (window.appState) window.appState.stats.ships = fallback.length;
+    ws.addEventListener('message', (evt) => {
+      try {
+        const msg = JSON.parse(evt.data);
+        if (msg.MessageType !== 'PositionReport') return;
+        updateShipEntity(msg, shipSource);
+      } catch {
+        // Skip malformed payloads.
+      }
+    });
+
+    ws.addEventListener('error', () => {
+      ws.close();
+    });
+
+    ws.addEventListener('close', () => {
+        publishShipStatus({
+          loading: false,
+          error: 'AIS stream unavailable',
+          isCached: false,
+          status: 'error',
+          timestamp: new Date().toISOString(),
+          source: 'ais',
+        });
+    });
+  } catch {
+       publishShipStatus({
+          loading: false,
+          error: 'AIS stream unavailable',
+          isCached: false,
+          status: 'error',
+          timestamp: new Date().toISOString(),
+          source: 'ais',
+        });
+  }
 }
 
 function updateShipCounts(shipSource) {
@@ -186,7 +165,7 @@ function updateShipEntity(msg, shipSource) {
 
   if (Math.abs(lng) > 180 || Math.abs(lat) > 90) return;
 
-  const pos = Cesium.Cartesian3.fromDegrees(lng, lat, 10);
+  const pos = Cesium.Cartesian3.fromDegrees(lng, lat, 100);
   const style = getShipStyle(shipType);
 
   if (!shipCache.has(mmsi)) {
@@ -194,7 +173,14 @@ function updateShipEntity(msg, shipSource) {
       id: `ship-${mmsi}`,
       name: meta.ShipName || `SHIP-${mmsi}`,
       position: new Cesium.ConstantPositionProperty(pos),
-      point: { pixelSize: style.size, color: style.color, outlineColor: Cesium.Color.BLACK, outlineWidth: 1 },
+      point: {
+        pixelSize: style.size,
+        color: style.color,
+        outlineColor: Cesium.Color.BLACK,
+        outlineWidth: 1,
+        disableDepthTestDistance: 0,
+        heightReference: Cesium.HeightReference.NONE,
+      },
       label: {
         text: meta.ShipName || mmsi,
         font: '8pt "JetBrains Mono"',
@@ -208,6 +194,7 @@ function updateShipEntity(msg, shipSource) {
       },
       properties: { shipType, mmsi, velocity: speed, heading: hdg, destination: meta.Destination },
     });
+    entity.show = true;
     entity.worldview = { kind: 'ship', color: style.color, id: mmsi };
     shipCache.set(mmsi, entity);
   } else {
@@ -219,4 +206,27 @@ function updateShipEntity(msg, shipSource) {
   }
 
   updateShipCounts(shipSource);
+  publishShipStatus({
+    loading: false,
+    error: null,
+    isCached: false,
+    status: 'success',
+    timestamp: new Date().toISOString(),
+    source: 'ais',
+  });
+}
+
+function publishShipStatus(partial) {
+  window.appState = window.appState || {};
+  window.appState.dataSources = window.appState.dataSources || {};
+  window.appState.dataSources.ships = {
+    ...(window.appState.dataSources.ships || {}),
+    ...partial,
+  };
+  window.dispatchEvent(new CustomEvent('worldview:data-status', {
+    detail: {
+      source: 'ships',
+      ...(window.appState.dataSources.ships || {}),
+    },
+  }));
 }
