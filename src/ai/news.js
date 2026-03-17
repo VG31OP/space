@@ -54,34 +54,22 @@ export function initNews(viewer) {
   if (!container) return;
 
   async function fetchNews() {
-    // Fallback 1: BBC
     try {
-      const res = await fetch('/api/bbc/news/world/rss.xml');
-      if (!res.ok) throw new Error('BBC failed');
-      const text = await res.text();
-      const xml = new DOMParser().parseFromString(text, 'application/xml');
-      const items = [...xml.querySelectorAll('item')].slice(0, 10).map(item => ({
-        title: item.querySelector('title')?.textContent || '',
-        url: item.querySelector('link')?.textContent || '',
-        publishedAt: item.querySelector('pubDate')?.textContent || '',
+      const res = await fetch('/api/news/top');
+      if (!res.ok) throw new Error('News proxy failed');
+      const data = await res.json();
+      
+      const items = (data.articles || []).map(a => ({
+        title: a.title,
+        url: a.url,
+        publishedAt: a.publishedAt,
+        description: a.description
       }));
+      
       renderNews(items, container, ticker, viewer);
-      return;
-    } catch (_) { }
-
-    // Fallback 2: Reuters
-    try {
-      const res = await fetch('/api/reuters/world/');
-      if (!res.ok) throw new Error('Reuters failed');
-      const text = await res.text();
-      const xml = new DOMParser().parseFromString(text, 'application/xml');
-      const items = [...xml.querySelectorAll('item')].slice(0, 10).map(item => ({
-        title: item.querySelector('title')?.textContent || '',
-        url: item.querySelector('link')?.textContent || '',
-        publishedAt: item.querySelector('pubDate')?.textContent || '',
-      }));
-      renderNews(items, container, ticker, viewer);
-    } catch (_) { }
+    } catch (e) {
+      console.warn('Failed to fetch news from proxy:', e);
+    }
   }
 
   fetchNews();

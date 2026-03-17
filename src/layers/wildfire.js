@@ -1,7 +1,7 @@
 import * as Cesium from 'cesium';
-import { safeFetch } from '../utils/safeFetch.js';
+import { robustFetch } from '../utils/api.js';
 
-// NASA FIRMS CSV feed for last 24h wildfire hotspots (no API key needed for public endpoint)
+// NASA FIRMS CSV feed for last 24h wildfire hotspots (proxied)
 const FIRMS_URL = '/api/firms/data/active_fire/modis-c6.1/csv/MODIS_C6_1_Global_24h.csv';
 
 export async function initWildfire(viewer) {
@@ -17,18 +17,17 @@ export async function initWildfire(viewer) {
     });
 
     try {
-        const res = await fetch(FIRMS_URL);
-        if (!res.ok) return;
+        const text = await robustFetch(FIRMS_URL, {}, 1800000, 'text');
+        if (!text) return;
         
-        const csv = await res.text();
-        const hotspots = parseFIRMSCsv(csv);
+        const hotspots = parseFIRMSCsv(text);
 
         if (!hotspots || hotspots.length === 0) return;
 
         hotspots.slice(0, 1000).forEach((hs, i) => {
             fireSource.entities.add({
                 id: `fire-${i}`,
-                name: `🔥 Wildfire Hotspot`,
+                name: `\u{1F525} Wildfire Hotspot`,
                 position: Cesium.Cartesian3.fromDegrees(hs.lng, hs.lat, 0),
                 point: {
                     pixelSize: Math.min(4 + hs.brightness / 100, 14),
@@ -44,8 +43,8 @@ export async function initWildfire(viewer) {
 
         const b = document.getElementById('badge-fire');
         if (b) b.textContent = Math.min(hotspots.length, 1000);
-    } catch {
-       return;
+    } catch (e) {
+       console.warn('Wildfire layer error:', e);
     }
 
     viewer.scene.postRender.addEventListener(() => {

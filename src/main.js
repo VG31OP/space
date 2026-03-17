@@ -14,7 +14,7 @@ import { initGlobe } from './globe.js';
 import { initFlights } from './layers/flights.js';
 import { initSatellites } from './layers/satellites.js';
 import { initShips } from './layers/ships.js';
-import { initJamming } from './layers/jamming.js';
+import { initEarthquakes } from './layers/earthquakes.js';
 import { initWildfire } from './layers/wildfire.js';
 import { initWeather } from './layers/weather.js';
 import { initHUD } from './ui/hud.js';
@@ -26,9 +26,6 @@ import './ui/modes.js';
 window.__ENV = {
   CESIUM_TOKEN: import.meta.env.VITE_CESIUM_TOKEN || '',
   GOOGLE_KEY: import.meta.env.VITE_GOOGLE_KEY || '',
-  OPENAI_KEY: import.meta.env.VITE_OPENAI_KEY || '',
-  NEWS_KEY: import.meta.env.VITE_NEWS_KEY || '',
-  AIS_KEY: import.meta.env.VITE_AIS_KEY || '',
 };
 
 function startClock() {
@@ -121,7 +118,7 @@ setInterval(refreshDataFreshnessIndicator, 1000);
       initFlights(window.viewer);
       setLoadingProgress(50, 'LOADING MARITIME DATA...');
       initShips(window.viewer);
-      initJamming(window.viewer);
+      initEarthquakes(window.viewer);
       setLoadingProgress(65, 'LOADING SATELLITE DATA...');
       await initSatellites(window.viewer);
       setLoadingProgress(80, 'LOADING INTEL LAYERS...');

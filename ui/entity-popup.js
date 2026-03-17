@@ -1,6 +1,0 @@
-function clearFlightPath(){['__fp1__','__fp2__'].forEach(id=>{const e=window.viewer.entities.getById(id);if(e)window.viewer.entities.remove(e);});}
-
-function showFlightPath(entity){clearFlightPath();const data=entity.properties?.data?.getValue?.();if(!data)return;const lat0=data.lat||data[6];const lon0=data.lon||data[5];const spd=data.velocity||data[9]||220;const hdg=(data.true_track||data[10]||0)*Math.PI/180;const alt=data.baro_altitude||data[7]||10000;const R=6371000;const d=(spd*60)/R;let clat=lat0*Math.PI/180;let clon=lon0*Math.PI/180;const pts=[];for(let i=0;i<=60;i++){pts.push(Cesium.Cartesian3.fromDegrees(clon*180/Math.PI,clat*180/Math.PI,alt));const nl=Math.asin(Math.sin(clat)*Math.cos(d)+Math.cos(clat)*Math.sin(d)*Math.cos(hdg));const nc=clon+Math.atan2(Math.sin(hdg)*Math.sin(d)*Math.cos(clat),Math.cos(d)-Math.sin(clat)*Math.sin(nl));clat=nl;clon=nc;}window.viewer.entities.add({id:'__fp1__',polyline:{positions:pts,width:1.5,material:new Cesium.PolylineDashMaterialProperty({color:Cesium.Color.WHITE.withAlpha(0.45),dashLength:10})}});window.viewer.entities.add({id:'__fp2__',position:pts[pts.length-1],point:{pixelSize:7,color:Cesium.Color.fromCssColorString('#ffaa00').withAlpha(0.8),outlineColor:Cesium.Color.WHITE.withAlpha(0.3),outlineWidth:1}});}
-
-window.clearFlightPath = clearFlightPath;
-window.showFlightPath = showFlightPath;

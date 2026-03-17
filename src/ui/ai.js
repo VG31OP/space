@@ -136,11 +136,10 @@ async function sendAnalyst() {
   const thinking = addMsg('ai', 'Analyzing');
 
   try {
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+    const response = await fetch('/api/openai/chat', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${window.__ENV.OPENAI_KEY}`,
       },
       body: JSON.stringify({
         model: 'gpt-4o-mini',
@@ -204,10 +203,7 @@ function renderFallbackSuggestions() {
 }
 
 async function refreshSmartView() {
-  if (!window.__ENV?.OPENAI_KEY) {
-    renderFallbackSuggestions();
-    return;
-  }
+  // We no longer check window.__ENV.OPENAI_KEY in frontend
   const now = Date.now();
   if (window._lastSmartCall && now - window._lastSmartCall < 60000) return;
   window._lastSmartCall = now;
@@ -226,11 +222,10 @@ async function refreshSmartView() {
   let suggestions = fallback;
 
   try {
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+    const response = await fetch('/api/openai/chat', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${window.__ENV.OPENAI_KEY}`,
       },
       body: JSON.stringify({
         model: 'gpt-4o-mini',

@@ -1,110 +1,133 @@
+import * as satellite from "satellite.js";
 import * as Cesium from 'cesium';
-import { safeFetch } from '../utils/safeFetch.js';
+import { robustFetch } from '../utils/api.js';
 
-const API_URL = 'https://api.le-systeme-solaire.net/rest/bodies/';
+const TLE_ENDPOINTS = {
+  active: "/api/celestrak/NORAD/elements/gp.php?GROUP=active&FORMAT=tle",
+  iss: "/api/celestrak/NORAD/elements/gp.php?CATNR=25544&FORMAT=tle",
+  starlink: "/api/celestrak/NORAD/elements/gp.php?GROUP=starlink&FORMAT=tle",
+};
+
+const LIMITS = { active: 300, iss: 1, starlink: 150 };
 const satCache = new Map();
 
 export async function initSatellites(viewer) {
   const satSource = new Cesium.CustomDataSource('satellites');
-  satSource.show = true;
   viewer.dataSources.add(satSource);
 
   window.layerToggles = window.layerToggles || {};
-  window.layerToggles['sats'] = true;
-  window.layerToggles['iss'] = true;
-  window.layerToggles['deb'] = true;
-  window.layerToggles['star'] = true;
-
-  ['sats', 'iss', 'deb', 'star'].forEach((key) => {
+  ['sats', 'iss', 'star', 'deb'].forEach(key => {
     const el = document.getElementById(`layer-${key}`);
-    if (el) el.addEventListener('change', (event) => { window.layerToggles[key] = event.target.checked; });
-  });
-  
-  publishSatelliteStatus({ loading: true, error: null });
-
-  const data = await safeFetch(API_URL);
-
-  if (!data || !data.bodies || data.bodies.length === 0) {
-    publishSatelliteStatus({
-      loading: false,
-      error: 'Data unavailable',
-      status: 'error',
-      timestamp: new Date().toISOString(),
+    window.layerToggles[key] = el ? el.checked : (key === 'iss' || key === 'sats');
+    if (el) el.addEventListener('change', e => {
+      window.layerToggles[key] = e.target.checked;
     });
-    return;
+  });
+
+  const groups = ['iss', 'star', 'active'];
+  for (const group of groups) {
+    refreshGroup(viewer, satSource, group);
   }
 
-  const bodies = data.bodies
-    .filter(b => b.isPlanet || b.bodyType === "Moon")
-    .map((b, index) => ({
-      id: b.id || `body-${index}`,
-      name: b.englishName || b.name,
-      gravity: b.gravity,
-      density: b.density,
-      moons: b.moons ? b.moons.length : 0,
-      longitude: (index * 15) % 360 - 180, // Fake layout just to spread them out logically
-      latitude: ((index * 5) % 180) - 90,
-      radius: (b.meanRadius || 1000) * 1000,
-      alt: 5000000 + (index * 100000) // Spread out altitude
-    }));
+  setInterval(() => {
+    updateSatPositions(satSource);
+  }, 3000); // Update positions every 3 seconds
 
-  bodies.forEach((record) => {
-    if (satCache.has(record.id)) return;
-    satCache.set(record.id, record);
+  // Refetch TLEs every hour
+  setInterval(() => {
+    groups.forEach(g => refreshGroup(viewer, satSource, g));
+  }, 3600000);
+}
+
+async function refreshGroup(viewer, source, group) {
+  try {
+    const text = await robustFetch(TLE_ENDPOINTS[group] || TLE_ENDPOINTS.active, {}, 3600000, 'text');
+    if (!text) return;
     
-    const entity = satSource.entities.add({
-      id: `sat-${record.id}`,
-      name: record.name,
-      position: Cesium.Cartesian3.fromDegrees(record.longitude, record.latitude, record.alt),
-      point: {
-          pixelSize: 8,
-          color: Cesium.Color.fromCssColorString('#00ccff'),
+    const records = parseTle(text).slice(0, LIMITS[group] || 100);
+
+    records.forEach(rec => {
+      const satrec = satellite.twoline2satrec(rec.line1, rec.line2);
+      if (!satrec) return;
+      
+      const id = `sat-${satrec.satnum}`;
+      if (satCache.has(id)) return;
+
+      const entity = source.entities.add({
+        id,
+        name: rec.name,
+        point: {
+          pixelSize: group === 'iss' ? 8 : 3,
+          color: group === 'iss' ? Cesium.Color.WHITE : Cesium.Color.CYAN,
           outlineColor: Cesium.Color.BLACK,
-          outlineWidth: 1,
-      },
-      label: {
-        text: record.name,
-        font: '8pt "JetBrains Mono"',
-        style: Cesium.LabelStyle.FILL_AND_OUTLINE,
-        fillColor: Cesium.Color.WHITE,
-        outlineColor: Cesium.Color.BLACK,
-        outlineWidth: 2,
-        pixelOffset: new Cesium.Cartesian2(0, -14),
-        show: true,
-      },
+          outlineWidth: 1
+        },
+        label: {
+          text: rec.name,
+          font: '8pt "JetBrains Mono"',
+          show: group === 'iss',
+          pixelOffset: new Cesium.Cartesian2(0, -12),
+          distanceDisplayCondition: new Cesium.DistanceDisplayCondition(0, 5000000)
+        }
+      });
+
+      satCache.set(id, { entity, satrec, group });
     });
 
-    entity.show = true;
-  });
-
-  publishSatelliteStatus({
-    loading: false,
-    error: null,
-    source: 'le-systeme-solaire',
-    isCached: false,
-    status: 'success',
-    timestamp: new Date().toISOString(),
-  });
-  
-  const counter = document.getElementById('hud-count-sats');
-  if (counter) counter.textContent = bodies.length;
-  if (window.appState) window.appState.stats.sats = bodies.length;
+    updateSatCounts();
+  } catch (e) {
+    console.warn(`Failed to load ${group} satellites`, e);
+  }
 }
 
-function publishSatelliteStatus(partial) {
-  window.appState = window.appState || {};
-  window.appState.dataSources = window.appState.dataSources || {};
-  window.appState.dataSources.satellites = {
-    ...(window.appState.dataSources.satellites || {}),
-    ...partial,
-  };
-  window.dispatchEvent(new CustomEvent('worldview:data-status', {
-    detail: {
-      source: 'satellites',
-      ...(window.appState.dataSources.satellites || {}),
-    },
-  }));
+function updateSatPositions(source) {
+  const now = new Date();
+  const gmst = satellite.gstime(now);
+
+  for (const [id, sat] of satCache) {
+    try {
+      const posVel = satellite.propagate(sat.satrec, now);
+      if (!posVel || !posVel.position || typeof posVel.position === 'boolean') continue;
+      
+      const geo = satellite.eciToGeodetic(posVel.position, gmst);
+      const pos = Cesium.Cartesian3.fromDegrees(
+        satellite.degreesLong(geo.longitude),
+        satellite.degreesLat(geo.latitude),
+        geo.height * 1000
+      );
+      
+      sat.entity.position = pos;
+      
+      // Filter by toggle
+      const toggleMap = { iss: 'iss', starlink: 'star', active: 'sats' };
+      sat.entity.show = window.layerToggles[toggleMap[sat.group]] ?? true;
+    } catch (e) {}
+  }
 }
 
-export function clearSatTrack() {}
-export function showSatTrack(entity) {}
+function parseTle(text) {
+  const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+  const entries = [];
+  for (let i = 0; i < lines.length; i += 3) {
+    if (lines[i + 2]) {
+      entries.push({ name: lines[i], line1: lines[i+1], line2: lines[i+2] });
+    }
+  }
+  return entries;
+}
+
+function updateSatCounts() {
+    const counts = { sats: 0, iss: 0, star: 0, deb: 0 };
+    for(const sat of satCache.values()) {
+        if(sat.group === 'active') counts.sats++;
+        if(sat.group === 'iss') counts.iss++;
+        if(sat.group === 'starlink') counts.star++;
+    }
+    ['sats', 'iss', 'star', 'deb'].forEach(k => {
+        const el = document.getElementById(`badge-${k}`);
+        if(el) el.textContent = counts[k];
+    });
+    const total = Object.values(counts).reduce((a,b) => a+b, 0);
+    const hud = document.getElementById('hud-count-sats');
+    if(hud) hud.textContent = total;
+}
